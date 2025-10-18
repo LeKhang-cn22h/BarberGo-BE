@@ -1,0 +1,36 @@
+# === Python cache ===
+__pycache__/
+*.py[cod]
+*$py.class
+
+# === Virtual environments ===
+.venv/
+venv/
+env/
+ENV/
+pip-wheel-metadata/
+*.egg-info/
+
+# === IDEs / Editors ===
+.vscode/
+.idea/
+*.swp
+
+# === OS files ===
+.DS_Store
+Thumbs.db
+
+# === Logs & temp ===
+*.log
+*.tmp
+
+# === Database / Private configs ===
+*.sqlite3
+*.db
+.env
+
+# === Build / dist ===
+build/
+dist/
+*.egg
+*.egg-info/
