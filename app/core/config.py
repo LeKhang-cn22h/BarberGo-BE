@@ -1,3 +1,5 @@
+import os
+
 FACE_REGIONS = {
     'forehead': [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109],
     'temple_left': [127, 162, 21, 54, 103, 67, 109, 10, 338, 297, 332],
@@ -10,4 +12,5 @@ FACE_REGIONS = {
 
 ACNE_LABELS = ['blackheads', 'dark_spot', 'nodules', 'papules', 'pustules', 'whiteheads']
 
-MODEL_PATH = "D:/laptrinhdd/laptrinhdidong/app/models/acne.pt"
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MODEL_PATH = os.path.join(BASE_DIR, "models", "acne.pt")
