@@ -4,7 +4,7 @@ numpy>=1.26.0,<2.0
 opencv-python-headless==4.8.1.78
 ultralytics==8.1.0
 mediapipe==0.10.21
-torch==2.3.1
+torch==2.1.0+cpu torchvision==0.16.0+cpu torchaudio==2.1.0+cpu -f https://download.pytorch.org/whl/cpu/torch_stable.html
 torchvision==0.18.1
 supabase
 python-dotenv
