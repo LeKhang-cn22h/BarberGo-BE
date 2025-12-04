@@ -105,15 +105,103 @@ def update_service(service_id: int, data: ServiceUpdate):
 # ==================== Delete Service ====================
 
 def delete_service(service_id: int):
-    """Xóa dịch vụ"""
+    """Xóa mềm dịch vụ (set status = false)"""
     try:
-        response = supabase.table("services").delete().eq("id", service_id).execute()
+        # Kiểm tra service có tồn tại không
+        service_check = supabase.table("services")\
+            .select("id, status")\
+            .eq("id", service_id)\
+            .execute()
+        
+        if not service_check.data:
+            raise HTTPException(status_code=404, detail="Không tìm thấy dịch vụ")
+        
+        # Kiểm tra đã bị xóa chưa
+        if not service_check.data[0].get('status'):
+            raise HTTPException(status_code=400, detail="Dịch vụ đã bị xóa trước đó")
+        
+        # Xóa mềm - set status = false
+        response = supabase.table("services")\
+            .update({"status": False})\
+            .eq("id", service_id)\
+            .execute()
         
         if not response.data:
             raise HTTPException(status_code=404, detail="Không tìm thấy dịch vụ")
         
-        return {"message": "Xóa dịch vụ thành công"}
+        return {
+            "message": "Xóa dịch vụ thành công",
+            "service": response.data[0]
+        }
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Xóa thất bại: {str(e)}")
+
+
+def restore_service(service_id: int):
+    """Khôi phục dịch vụ đã xóa (set status = true)"""
+    try:
+        # Kiểm tra service có tồn tại không
+        service_check = supabase.table("services")\
+            .select("id, status")\
+            .eq("id", service_id)\
+            .execute()
+        
+        if not service_check.data:
+            raise HTTPException(status_code=404, detail="Không tìm thấy dịch vụ")
+        
+        # Kiểm tra đã bị xóa chưa
+        if service_check.data[0].get('status'):
+            raise HTTPException(status_code=400, detail="Dịch vụ chưa bị xóa")
+        
+        # Khôi phục - set status = true
+        response = supabase.table("services")\
+            .update({"status": True})\
+            .eq("id", service_id)\
+            .execute()
+        
+        if not response.data:
+            raise HTTPException(status_code=404, detail="Không tìm thấy dịch vụ")
+        
+        return {
+            "message": "Khôi phục dịch vụ thành công",
+            "service": response.data[0]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Khôi phục thất bại: {str(e)}")
+
+
+def toggle_service_status(service_id: int):
+    """Chuyển đổi trạng thái active/inactive của dịch vụ"""
+    try:
+        # Lấy trạng thái hiện tại
+        service_check = supabase.table("services")\
+            .select("id, status")\
+            .eq("id", service_id)\
+            .execute()
+        
+        if not service_check.data:
+            raise HTTPException(status_code=404, detail="Không tìm thấy dịch vụ")
+        
+        current_status = service_check.data[0].get('status', False)
+        new_status = not current_status
+        
+        # Chuyển đổi status
+        response = supabase.table("services")\
+            .update({"status": new_status})\
+            .eq("id", service_id)\
+            .execute()
+        
+        status_text = "kích hoạt" if new_status else "vô hiệu hóa"
+        
+        return {
+            "message": f"Đã {status_text} dịch vụ thành công",
+            "service": response.data[0]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Thao tác thất bại: {str(e)}")
