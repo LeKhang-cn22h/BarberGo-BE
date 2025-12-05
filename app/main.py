@@ -7,6 +7,8 @@ from app.routers.booking_router import router as booking_router
 from app.routers.ratings_router import router as ratings_router
 from app.routers.appointment_router import router as appointment_router
 from app.routers.time_slot_router import router as time_slot_router
+from app.routers.rag_router import router as rag_router
+
 app = FastAPI(
     title="Acne Detection API and Supabase FastAPI",
     description="API phát hiện mụn sử dụng YOLOv8 và MediaPipe Face Mesh và quản lý người dùng với Supabase",
@@ -21,6 +23,8 @@ app.include_router(booking_router)
 app.include_router(ratings_router)
 app.include_router(appointment_router)
 app.include_router(time_slot_router)
+app.include_router(rag_router)
+
 
 @app.get("/")
 async def root():
