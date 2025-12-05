@@ -34,9 +34,9 @@ class AcneDetectionService:
         # Phân loại severity
         if not has_acne:
             severity = 'none'
-        elif confidence < 0.65:
+        elif confidence < 0.35:
             severity = 'mild'
-        elif confidence < 0.8:
+        elif confidence < 0.65:
             severity = 'moderate'
         else:
             severity = 'severe'
