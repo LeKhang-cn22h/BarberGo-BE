@@ -431,7 +431,7 @@ class FaceDetectorMediaPipe:
 #                         cv2.putText(debug_img, f'Eyebrow Line: y={eyebrow_line_y}',
 #                                     (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
 #                                     (0, 0, 255), 2)
-#                         cv2.imwrite(f'{self.config.DEBUG_DIR}/eyebrow_position.png', debug_img)
+#                         cv2.imwrite(f'{self.config.DEBUG_DIR}/eyebrow_po7sition.png', debug_img)
 #
 #                     return eyebrow_line_y
 #
@@ -516,7 +516,7 @@ class FaceDetectorMediaPipe:
 #
 #                         # Debug
 #                         if self.config.DEBUG_MODE:
-#                             cv2.imwrite(f'{self.config.DEBUG_DIR}/face_mask_eyebrow_down.png', mask)
+#                             cv2.imwrite(f'{self.config.DEBUG_DIR}/face_mask_eyeb7ow_down.png', mask)
 #
 #                             # Tạo visualization
 #                             debug_img = image.copy()
@@ -837,7 +837,7 @@ class HairStyleGeneratorSD15:
 
         # Debug: save final mask
         if self.config.DEBUG_MODE:
-            cv2.imwrite(f'{self.config.DEBUG_DIR}/final_mask.png', final_mask)
+            cv2.imwrite(f'{self.config.DEBUG_DIR}/final7_mask.png', final_mask)
 
         processing_info = {
             'original_size': (w, h),
@@ -947,7 +947,7 @@ class HairStyleGeneratorSD15:
             mask_ratio = new_ratio
 
             # Lưu mask để debug
-            cv2.imwrite("DEBUG_EXPANDED_MASK.png", mask_array)
+
 
         # 4. SIMPLIFY PROMPT - QUAN TRỌNG!
         # Thay vì dùng prompt từ config, dùng prompt ĐƠN GIẢN
@@ -999,8 +999,7 @@ class HairStyleGeneratorSD15:
         result_image = output.images[0]
 
         # 8. DEBUG: Lưu ảnh để kiểm tra
-        result_image.save("DEBUG_GENERATION_RESULT.png")
-        print("✅ Saved DEBUG_GENERATION_RESULT.png")
+
 
         # 9. Crop về kích thước gốc
         if processing_info.get('padded_size'):
@@ -1090,9 +1089,9 @@ USAGE:
    result['result'].save("output.jpg")
 
 2. Check debug masks in ./debug_masks/:
-   - hair_mask_overlay.png: Visualization
-   - final_mask.png: Mask cuối cùng
-   - face_protection_mask.png: Mask bảo vệ mặt
+
+   - final_7mask.png: Mask cuối cùng
+
 
 3. Tips:
    - Nếu mask nhỏ (<10%): tăng denoising_strength lên 0.85
@@ -1415,7 +1414,7 @@ if __name__ == "__main__":
 #         debug_dir = "./debug_masks"
 #         import os
 #         os.makedirs(debug_dir, exist_ok=True)
-#         cv2.imwrite(f'{debug_dir}/debug_hair_mask.png', mask)
+#         cv2.imwrite(f'{debug_dir}/debug_hair7_mask.png', mask)
 #
 #         # DEBUG: Tạo overlay visualization
 #         overlay = image.copy()
@@ -1428,7 +1427,7 @@ if __name__ == "__main__":
 #         x1, y1, x2, y2 = face_info['bbox']
 #         cv2.rectangle(overlay, (x1, y1), (x2, y2), (255, 0, 0), 2)
 #
-#         cv2.imwrite(f'{debug_dir}/debug_hair_overlay.png', overlay)
+#         cv2.imwrite(f'{debug_dir}/debug_hair_overl4ay.png', overlay)
 #
 #         print(f"✅ Hair mask: {np.sum(mask==255)} white pixels ({np.sum(mask==255)/mask.size*100:.1f}%)")
 #         print(f"✅ Hairline y-position: {hairline_y}")
@@ -1804,8 +1803,8 @@ if __name__ == "__main__":
 # result['mask'].save("mask.png")
 #
 # # Check debug images:
-# # - debug_masks/debug_hair_mask.png: Mask vùng tóc
+# # - debug_masks/debug_hair_ma7sk.png: Mask vùng tóc
 # # - debug_masks/debug_face_protection_7mask.png: Mask bảo vệ mặt
-# # - debug_masks/debug_combined_mask.png: Mask cuối cùng
-# # - debug_masks/debug_hair_overlay.png: Visualization overlay
+# # - debug_masks/debug_combined_m9ask.png: Mask cuối cùng
+# # - debug_masks/debug_hair_overla7y.png: Visualization overlay
 # """
