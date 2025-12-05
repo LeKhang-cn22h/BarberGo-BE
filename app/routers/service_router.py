@@ -58,10 +58,31 @@ def update_service(service_id: int, data: ServiceUpdate):
 
 # ==================== Delete ====================
 
-@router.delete("/{service_id}", dependencies=[Depends(get_current_user)])
+@router.patch("/{service_id}/delete", dependencies=[Depends(get_current_user)])
 def delete_service(service_id: int):
     """
-    Xóa dịch vụ
+    Xóa mềm dịch vụ (set status = false)
+    - Không xóa hẳn khỏi database
     - Yêu cầu đăng nhập
     """
     return service_service.delete_service(service_id)
+
+
+@router.patch("/{service_id}/restore", dependencies=[Depends(get_current_user)])
+def restore_service(service_id: int):
+    """
+    Khôi phục dịch vụ đã xóa (set status = true)
+    - Yêu cầu đăng nhập
+    """
+    return service_service.restore_service(service_id)
+
+
+@router.patch("/{service_id}/toggle-status", dependencies=[Depends(get_current_user)])
+def toggle_service_status(service_id: int):
+    """
+    Chuyển đổi trạng thái active/inactive của dịch vụ
+    - Nếu đang active (true) -> inactive (false)
+    - Nếu đang inactive (false) -> active (true)
+    - Yêu cầu đăng nhập
+    """
+    return service_service.toggle_service_status(service_id)

@@ -5,6 +5,7 @@ opencv-python-headless==4.8.1.78
 ultralytics==8.1.0
 mediapipe==0.10.21
 
+tqdm
 supabase
 python-dotenv
 pydantic
@@ -19,6 +20,34 @@ transformers==4.36.2
 supervision
 
 git+https://github.com/facebookresearch/segment-anything.git
+safetensors==0.4.1
+
+# ControlNet và FaceID
+
+
+onnxruntime-gpu==1.16.3
+
+# Image Processing
+scikit-image==0.22.0
+imageio==2.33.0
+
+# Utilities
+pydantic==2.5.0
+python-dotenv==1.0.0
+tqdm==4.66.1
+
+# Optional - Speed up
+xformers==0.0.23  # Memory efficient attention
+python-multipart==0.0.9
+insightface==0.7.3
+onnxruntime==1.16.3
+pillow==10.1.0
+accelerate==0.25.0
+diffusers==0.29.0
+transformers==4.36.2
+google-generativeai
+
+
 safetensors==0.4.1
 
 # ControlNet và FaceID

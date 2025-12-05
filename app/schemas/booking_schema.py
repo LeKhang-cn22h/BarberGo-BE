@@ -1,46 +1,54 @@
-from pydantic import BaseModel, validator
-from typing import Optional
+from pydantic import BaseModel, field_validator
+from typing import Optional, List
 from datetime import datetime
 
 # Tạo booking mới
 class BookingCreate(BaseModel):
-    barber_id: str  # UUID
     user_id: str  # UUID
-    service_id: int
-    date_time: datetime
-    status: Optional[str] = "pending"
+    time_slot_id: int
+    service_ids: List[int]  # Danh sách service IDs
+    total_duration_min: int
+    total_price: int
+    status: Optional[str] = "confirmed"
     
-    @validator('status')
+    @field_validator('status')
     def validate_status(cls, v):
-        allowed_statuses = ['pending', 'confirmed', 'completed', 'cancelled']
+        allowed_statuses = ['confirmed', 'completed', 'cancelled']
         if v not in allowed_statuses:
             raise ValueError(f'Status phải là một trong: {allowed_statuses}')
         return v
-
-# Cập nhật booking
-class BookingUpdate(BaseModel):
-    barber_id: Optional[str] = None
-    user_id: Optional[str] = None
-    service_id: Optional[int] = None
-    date_time: Optional[datetime] = None
-    status: Optional[str] = None
     
-    @validator('status')
-    def validate_status(cls, v):
-        if v is not None:
-            allowed_statuses = ['pending', 'confirmed', 'completed', 'cancelled']
-            if v not in allowed_statuses:
-                raise ValueError(f'Status phải là một trong: {allowed_statuses}')
+    @field_validator('service_ids')
+    def validate_service_ids(cls, v):
+        if not v or len(v) == 0:
+            raise ValueError('Phải chọn ít nhất một dịch vụ')
         return v
 
-# Response booking
+# Response booking với thông tin đầy đủ
+class BookingResponse(BaseModel):
+    id: int
+    user_id: str
+    status: str
+    time_slot_id: int
+    total_duration_min: int
+    total_price: int
+    # Thông tin bổ sung từ joins
+    user: Optional[dict] = None
+    time_slot: Optional[dict] = None
+    barber: Optional[dict] = None
+    services: Optional[List[dict]] = None
+
+    class Config:
+        from_attributes = True
+
+# Response booking cơ bản
 class Booking(BaseModel):
     id: int
-    barber_id: Optional[str] = None
-    user_id: Optional[str] = None
-    service_id: Optional[int] = None
-    date_time: Optional[datetime] = None
-    status: Optional[str] = None
+    user_id: str
+    status: str
+    time_slot_id: int
+    total_duration_min: int
+    total_price: int
 
     class Config:
         from_attributes = True

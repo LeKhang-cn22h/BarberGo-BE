@@ -32,7 +32,6 @@ def create_rating(data: RatingCreate):
             "barber_id": data.barber_id,
             "user_id": data.user_id,
             "score": float(data.score),
-            "comment": data.comment,
             "created_at": datetime.now().isoformat()
         }
         
@@ -59,7 +58,7 @@ def get_all_ratings():
     """Lấy danh sách tất cả đánh giá"""
     try:
         response = supabase.table("ratings")\
-            .select("*, barbers(full_name), users(full_name, email)")\
+            .select("*, barbers(name), users(full_name, email)")\
             .order("created_at", desc=True)\
             .execute()
         return response.data
@@ -71,7 +70,7 @@ def get_rating_by_id(rating_id: int):
     """Lấy thông tin đánh giá theo ID"""
     try:
         response = supabase.table("ratings")\
-            .select("*, barbers(full_name), users(full_name, email)")\
+            .select("*, barbers(name), users(full_name, email)")\
             .eq("id", rating_id)\
             .execute()
         
@@ -168,8 +167,6 @@ def update_rating(rating_id: int, data: RatingUpdate):
         if data.score is not None:
             update_data["score"] = float(data.score)
         
-        if data.comment is not None:
-            update_data["comment"] = data.comment
         
         if not update_data:
             raise HTTPException(status_code=400, detail="Không có dữ liệu để cập nhật")

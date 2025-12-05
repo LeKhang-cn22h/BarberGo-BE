@@ -8,7 +8,6 @@ class RatingCreate(BaseModel):
     barber_id: str  # UUID
     user_id: str  # UUID
     score: Decimal
-    comment: Optional[str] = None
     
     @validator('score')
     def validate_score(cls, v):
@@ -19,7 +18,6 @@ class RatingCreate(BaseModel):
 # Cập nhật rating
 class RatingUpdate(BaseModel):
     score: Optional[Decimal] = None
-    comment: Optional[str] = None
     
     @validator('score')
     def validate_score(cls, v):
@@ -33,7 +31,6 @@ class Rating(BaseModel):
     barber_id: Optional[str] = None
     user_id: Optional[str] = None
     score: Optional[Decimal] = None
-    comment: Optional[str] = None
     created_at: Optional[datetime] = None
 
     class Config:
