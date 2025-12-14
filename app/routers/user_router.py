@@ -6,7 +6,8 @@ from app.schemas.user_schema import (
     ResendConfirmationRequest,
     ForgotPasswordRequest,
     ResetPasswordRequest,
-    CreateOwnerRequest
+    CreateOwnerRequest,
+    GGLoginRequest
 )
 from app.services import user_service
 from app.dependencies.current_user import get_current_user
@@ -32,6 +33,11 @@ def create_owner(data: CreateOwnerRequest):
     - Role = owner
     """
     return user_service.create_owner_account(data)
+
+ # gui id kiem tra can dang ky hay dang nhap
+@router.post("/google")
+def login_or_logup_gg(data: GGLoginRequest):
+    return user_service.gg_login_or_logup(data.id_token)
 
 @router.post("/resend-confirmation")
 def resend_confirmation(data: ResendConfirmationRequest):
@@ -91,3 +97,4 @@ def update_user(user_id: str, data: UserUpdate):
 def delete_user(user_id: str):
     """Xóa user"""
     return user_service.delete_user(user_id)
+
