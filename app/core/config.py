@@ -27,7 +27,7 @@ FACE_REGIONS = {
 
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MODEL_PATH = os.path.join(BASE_DIR, "models", "acne_best_pore_removed.pth")
+MODEL_PATH = os.path.join(BASE_DIR, "models", "acne_best.pth")
 
 # Device cho PyTorch
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"

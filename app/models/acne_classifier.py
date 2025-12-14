@@ -189,19 +189,19 @@ class AcneClassifier:
         total_additional = 3
 
         # Criterion 1: Has acne-like redness (THRESHOLD CAO HƠN)
-        if redness_score > 0.15:  # Tăng từ 0.05 lên 0.15
+        if redness_score > 0.10:  # Tăng từ 0.05 lên 0.15
             additional_criteria += 1
 
         # Criterion 2: Has texture variation
-        if texture_score > 0.5:  # Tăng từ 0.3 lên 0.5
+        if texture_score > 0.3:  # Tăng từ 0.3 lên 0.5
             additional_criteria += 1
 
         # Criterion 3: Has visible spots
-        if spot_score > 0.3:
+        if spot_score > 0.4:
             additional_criteria += 1
 
         # ✅ CẦN ÍT NHẤT 2/3 TIÊU CHÍ PHỤ (ngoài CNN)
-        final_has_acne = additional_criteria >= 2
+        final_has_acne = additional_criteria >= 1
         final_confidence = (additional_criteria / total_additional) * cnn_confidence
 
         details = {
