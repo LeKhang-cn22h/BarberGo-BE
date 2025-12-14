@@ -109,7 +109,7 @@ def get_all_bookings():
 def get_booking_by_id(booking_id: int):
     """Lấy thông tin booking theo ID với đầy đủ thông tin"""
     try:
-        print(f"🔍 DEBUG: Fetching booking ID: {booking_id}")
+        print(f" DEBUG: Fetching booking ID: {booking_id}")
         
         # Test query đơn giản trước
         simple_response = supabase.table("bookings")\
@@ -187,7 +187,7 @@ def get_booking_by_id(booking_id: int):
     except Exception as e:
         import traceback
         error_trace = traceback.format_exc()
-        print(f"❌ ERROR: {error_trace}")
+        print(f"ERROR: {error_trace}")
         raise HTTPException(status_code=400, detail=f"Lỗi: {str(e)}")
     
 def get_bookings_by_user(user_id: str):
