@@ -263,3 +263,73 @@ def create_owner_account(data):
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Tạo tài khoản owner thất bại: {str(e)}")
+# đăng nhập hoặc tự động đăng ký với gg
+def gg_login_or_logup(id_token:str):
+    try:
+        auth_response= supabase.auth.sign_in_with_id_token({
+            "provider": "google",
+            "token": id_token
+        })
+        if not auth_response.user:
+            raise HTTPException(status_code=400, detail="Xac thuc gg that bai")
+        
+        user_id=auth_response.user.id
+        email=auth_response.user.email
+        user_metadata=auth_response.user.user_metadata or {}
+        full_name=user_metadata.get("full_name") or user_metadata.get("name", "")
+        avatar_url=user_metadata.get("avatar_url") or user_metadata.get("picture","")
+
+        existing_user=supabase.table("users").select("*").eq("id", user_id).execute()
+        if existing_user.data:
+            user_data=existing_user.data[0]
+            if avatar_url and avatar_url != user_data.get("avatar_url"):
+                supabase.table("users").update({
+                    "avatar_url": avatar_url
+                }).eq("id", user_id).execute()
+                user_data["avatar_url"]=avatar_url
+            return{
+                "message":"Dang nhap thanh cong",
+                "user":{
+                    "id":user_data["id"],
+                    "email": user_data["email"],
+                    "full_name": user_data["full_name"],
+                    "phone": user_data.get("phone"),  
+                    "avatar_url": user_data.get("avatar_url"),
+                    "email_confirmed": True
+                },
+                "access_token":auth_response.session.access_token,
+                "refresh_token":auth_response.session.refresh_token,
+                "is_new_user":False
+            }
+        else:
+            user_data={
+                "id":user_id,
+                "email":email,
+                "full_name":full_name,
+                "phone":None,
+                "avatar_url":avatar_url,
+                "created_at":datetime.now().isoformat()
+            }
+            return {
+                "message": "Đăng ký thành công với Google",
+                "user": {
+                    "id": user_id,
+                    "email": email,
+                    "full_name": full_name,
+                    "phone": None,
+                    "avatar_url": avatar_url,
+                    "email_confirmed": True
+                },
+                "access_token": auth_response.session.access_token,
+                "refresh_token": auth_response.session.refresh_token,
+                "is_new_user": True  # ← Lần đầu đăng ký
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Dang nhap that bai: {str(e)}"
+        )
+
+        
