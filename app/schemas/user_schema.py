@@ -46,3 +46,6 @@ class CreateOwnerRequest(BaseModel):
     password: str
     full_name: str
     phone: Optional[str] = None
+
+class GGLoginRequest(BaseModel):
+    id_token:str
