@@ -68,8 +68,23 @@ def get_services_by_barber(barber_id: str):
         return response.data
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Lỗi: {str(e)}")
-
-
+    
+    # lấy giá nhỏ và lớn của barber
+def get_min_max_price_by_barber(barber_id:str):
+    try:
+        response= supabase.table("services").select("price").eq("barber_id", barber_id).execute()
+        price=[item["price"] for item in response.data if item["price"] is not None]
+        if not price:
+            return {
+                "min_price":None,
+                "max_price":None
+            }
+        return {
+            "min_price":min(price),
+            "max_price":max(price)
+        }   
+    except Exception as e:
+        raise HTTPException(status_code=400,detail=f"lỗi: {str(e)}")
 # ==================== Update Service ====================
 
 def update_service(service_id: int, data: ServiceUpdate):

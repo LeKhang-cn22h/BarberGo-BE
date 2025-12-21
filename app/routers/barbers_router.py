@@ -68,9 +68,9 @@ def get_barbers_by_location(location: str):
     return barbers_service.get_barbers_by_location(location)
 
 
-@router.get("/area/{area}", response_model=List[BarberResponse])
-def get_barbers_by_area(area: str):
-    """Lấy tất cả barbers theo area"""
+@router.get("/area", response_model=List[BarberResponse])
+def get_barbers_by_area(area: str = Query(...)):
+    "lấy tất cả barber thoi area"
     return barbers_service.get_barbers_by_area(area)
 
 

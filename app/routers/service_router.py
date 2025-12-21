@@ -44,6 +44,10 @@ def get_services_by_barber(barber_id: str):
     """
     return service_service.get_services_by_barber(barber_id)
 
+@router.get("/pricerange/{barber_id}")
+def get_price_range(barber_id:str):
+    "Lấy khoảng giá barber"
+    return service_service.get_min_max_price_by_barber(barber_id)
 
 # ==================== Update ====================
 
