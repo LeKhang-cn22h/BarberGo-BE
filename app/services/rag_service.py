@@ -1,9 +1,12 @@
+from unittest import result
 import google.generativeai as genai
 from supabase import create_client
 import os
 from typing import List, Dict, Optional
 from dotenv import load_dotenv
 import time
+
+from sympy import content
 
 load_dotenv()
 
@@ -34,7 +37,7 @@ class RAGService:
         result = genai.embed_content(
             model=self.embed_model,
             content=text,
-            task_type="retrieval_query"
+            task_type="retrieval_document"
         )
         return result['embedding']
     
@@ -77,7 +80,7 @@ class RAGService:
             return filtered_docs
             
         except Exception as e:
-            print(f"❌ Lỗi khi search documents: {e}")
+            print(f" Lỗi khi search documents: {e}")
             return []
     
     def classify_question(self, question: str) -> str:
@@ -144,7 +147,7 @@ class RAGService:
             Câu trả lời từ Gemini
         """
         # Nếu có context với similarity cao (>0.65), trả lời từ knowledge base
-        if contexts and len(contexts) > 0 and contexts[0]['similarity'] > 0.65:
+        if contexts and len(contexts) > 0:
             # Build context từ retrieved documents
             context_text = "\n\n".join([
                 f"Thông tin {i+1}:\n{doc['metadata']['output']}"
@@ -174,7 +177,7 @@ CÂU TRẢ LỜI:"""
                 response = self.gen_model.generate_content(prompt)
                 return response.text
             except Exception as e:
-                print(f"❌ Lỗi khi generate answer: {e}")
+                print(f"Lỗi khi generate answer: {e}")
                 # Fallback: trả về answer từ database
                 return contexts[0]['metadata']['output']
         
@@ -256,7 +259,7 @@ CÂU TRẢ LỜI:"""
             response = self.gen_model.generate_content(prompt)
             return response.text
         except Exception as e:
-            print(f"❌ Lỗi fallback: {e}")
+            print(f"Lỗi fallback: {e}")
             
             # Hard fallback dựa trên loại
             fallback_responses = {
@@ -268,60 +271,247 @@ CÂU TRẢ LỜI:"""
             return fallback_responses.get(question_type, fallback_responses['off_topic'])
     
     def query(
-        self, 
-        question: str, 
-        top_k: int = 3,
-        return_sources: bool = False
-    ) -> Dict:
-        """
-        Main function để query RAG system
-        
-        Args:
-            question: Câu hỏi của user
-            top_k: Số lượng contexts để retrieve
-            return_sources: Có trả về sources không
-            
-        Returns:
-            Dict chứa answer và sources (nếu có)
-        """
-        # 1. Retrieve relevant documents
-        relevant_docs = self.search_similar_documents(question, top_k)
-        
-        # 2. Generate answer
-        answer = self.generate_answer(question, relevant_docs)
-        
-        # 3. Xác định confidence
-        if relevant_docs and len(relevant_docs) > 0:
-            max_similarity = relevant_docs[0]['similarity']
-            if max_similarity > 0.75:
-                confidence = "high"
-            elif max_similarity > 0.5:
-                confidence = "medium"
-            else:
-                confidence = "low"
-        else:
-            # Không có docs -> câu hỏi ngoài lề
-            question_type = self.classify_question(question)
-            confidence = "medium" if question_type in ['greeting', 'beauty_related'] else "low"
-        
-        # 4. Prepare response
-        response = {
-            "answer": answer,
-            "confidence": confidence
-        }
-        
-        if return_sources:
-            response["sources"] = [
-                {
-                    "question": doc['metadata']['input'],
-                    "answer": doc['metadata']['output'],
-                    "similarity": round(doc['similarity'], 3)
-                }
-                for doc in relevant_docs
-            ] if relevant_docs else []
-        
-        return response
+    self,
+    question: str,
+    user_id: str,
+    session_id: str | None = None,
+    top_k: int = 3,
+    return_sources: bool = False
+):
+    # 1. Tạo session nếu chưa có
+        if not session_id:
+            session_id = self.create_chat_session(
+                user_id=user_id,
+                title=question[:50]
+            )
 
+        # 2. Lưu message user
+        self.save_chat_message(
+            session_id=session_id,
+            role="user",
+            content=question
+        )
+
+        # 3. RAG retrieve
+        relevant_docs = self.search_similar_documents(question, top_k)
+
+        # 4. Generate answer
+        answer = self.generate_answer(question, relevant_docs)
+
+        # 5. Confidence
+        if relevant_docs:
+            similarity = relevant_docs[0]["similarity"]
+            confidence = (
+                "high" if similarity > 0.6 else
+                "medium" if similarity > 0.45 else
+                "low"
+            )
+        else:
+            confidence = "low"
+
+        # 6. Lưu message assistant
+        self.save_chat_message(
+            session_id=session_id,
+            role="assistant",  # hoặc admin nếu chưa sửa DB
+            content=answer,
+            confidence=confidence
+        )
+
+        return {
+            "session_id": session_id,
+            "answer": answer,
+            "confidence": confidence,
+            "sources": relevant_docs if return_sources else None
+        }
+
+    #dung de tao session chat moi
+    def create_chat_session(self, user_id: str, title: str) -> str:
+        result = self.supabase.table("chat_sessions").insert({
+            "user_id": user_id,
+            "title": title
+        }).execute()
+
+        return result.data[0]["id"]
+    
+    def save_chat_message(
+        self,
+        session_id: str,
+        role: str,
+        content: str,
+        confidence: str | None = None
+        ):
+        self.supabase.table("chat_messages").insert({
+        "session_id": session_id,
+        "role": role,
+        "content": content,
+        "confidence": confidence
+    }).execute()
+
+    def get_chat_history(self, session_id: str):
+        result = self.supabase.table("chat_messages") \
+            .select("id, role, content, confidence, created_at") \
+            .eq("session_id", session_id) \
+            .order("created_at", desc=False) \
+            .execute()
+
+        return result.data
+    def get_user_sessions(self, user_id: str):
+        result = self.supabase.table("chat_sessions") \
+            .select("id, title, created_at") \
+            .eq("user_id", user_id) \
+            .order("created_at", desc=True) \
+            .execute()
+
+        return result.data
+    
+    def delete_session(self, session_id: str) -> bool:
+        """Xóa session và toàn bộ messages"""
+        try:
+            # 1. Xóa messages
+            self.supabase.table("chat_messages")\
+                .delete()\
+                .eq("session_id", session_id)\
+                .execute()
+            
+            # 2. Xóa session
+            result = self.supabase.table("chat_sessions")\
+                .delete()\
+                .eq("id", session_id)\
+                .execute()
+            
+            return bool(result.data)
+        except Exception as e:
+            print(f"Lỗi xóa session: {e}")
+            return False
+    
+    def update_session_title(self, session_id: str, new_title: str) -> bool:
+        """Đổi tên session"""
+        try:
+            result = self.supabase.table("chat_sessions")\
+                .update({"title": new_title})\
+                .eq("id", session_id)\
+                .execute()
+            
+            return bool(result.data)
+        except Exception as e:
+            print(f"Lỗi cập nhật session: {e}")
+            return False
+    
+    def create_document(self,content:str, output:str,extra_metadata:dict |None=None) ->bool:
+        try:
+            metadata={
+                "output":output
+            }
+            if extra_metadata:
+                metadata.update(extra_metadata)
+            self.supabase.table("documents").insert({
+                "content":content,
+                "embedding":self.generate_embedding(content),
+                "metadata":metadata
+            }).execute()
+            return True
+        except Exception as e:
+            print(f"Lỗi tạo document: {e}")
+            return False
+
+    def update_document(self,document_id: int,new_content: str | None = None,new_output: str | None = None,new_metadata: dict | None = None) -> bool:
+        try:
+            update_data = {}
+
+            # 1. Nếu content đổi → tạo embedding mới
+            if new_content:
+                update_data["content"] = new_content
+                update_data["embedding"] = self.generate_embedding(new_content)
+
+            # 2. Nếu output hoặc metadata đổi
+            if new_output or new_metadata:
+                # Lấy metadata cũ
+                old_doc = self.supabase.table("documents") \
+                    .select("metadata") \
+                    .eq("id", document_id) \
+                    .single() \
+                    .execute()
+
+                metadata = old_doc.data["metadata"]
+
+                if new_output:
+                    metadata["output"] = new_output
+
+                if new_metadata:
+                    metadata.update(new_metadata)
+
+                update_data["metadata"] = metadata
+
+            # 3. Update DB
+            result = self.supabase.table("documents") \
+                .update(update_data) \
+                .eq("id", document_id) \
+                .execute()
+
+            return bool(result.data)
+
+        except Exception as e:
+            print(f"Lỗi cập nhật document: {e}")
+            return False
+    def delete_document(self, document_id: int) -> bool:
+        try:
+            result = self.supabase.table("documents") \
+                .delete() \
+                .eq("id", document_id) \
+                .execute()
+
+            return bool(result.data)
+        except Exception as e:
+            print(f"Lỗi xóa document: {e}")
+            return False
+    def get_all_documents(
+    self,
+    limit: int = 100,
+    offset: int = 0
+    ):
+        """
+        Lấy danh sách tất cả documents (có phân trang)
+        """
+        try:
+            result = self.supabase.table("documents") \
+                .select("id, content, metadata") \
+                .range(offset, offset + limit - 1) \
+                .order("id", desc=False) \
+                .execute()
+
+            return result.data
+
+        except Exception as e:
+            print(f"Lỗi lấy danh sách documents: {e}")
+            return []
+    def get_document_by_id(self, document_id: int):
+        """
+        Lấy chi tiết 1 document theo ID
+        """
+        try:
+            result = self.supabase.table("documents") \
+                .select("id, content, metadata") \
+                .eq("id", document_id) \
+                .single() \
+                .execute()
+
+            return result.data
+
+        except Exception as e:
+            print(f"Lỗi lấy document {document_id}: {e}")
+            return None
+    
+    def search_documents_by_keyword(self, keyword: str):
+        try:
+            result = self.supabase.table("documents") \
+                .select("id, content, metadata") \
+                .ilike("content", f"%{keyword}%") \
+                .execute()
+
+            return result.data
+        except Exception as e:
+            print(f"Lỗi search document: {e}")
+            return []
 
 # Singleton instance
 rag_service = RAGService()
