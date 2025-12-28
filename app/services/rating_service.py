@@ -40,7 +40,7 @@ def create_rating(data: RatingCreate):
         if not response.data:
             raise HTTPException(status_code=400, detail="Tạo đánh giá thất bại")
         
-        # ← CẬP NHẬT RANK CỦA BARBER
+        #  CẬP NHẬT RANK CỦA BARBER
         new_rank = update_barber_rank(data.barber_id)
         
         return {
@@ -101,7 +101,7 @@ def get_ratings_by_user(user_id: str):
     """Lấy danh sách đánh giá của 1 user"""
     try:
         response = supabase.table("ratings")\
-            .select("*, barbers(full_name, avatar_url)")\
+            .select("*, barbers(name, imagepath)")\
             .eq("user_id", user_id)\
             .order("created_at", desc=True)\
             .execute()
@@ -114,7 +114,7 @@ def get_barber_average_rating(barber_id: str):
     """Lấy điểm trung bình và tổng số đánh giá của barber"""
     try:
         # Kiểm tra barber có tồn tại không
-        barber_check = supabase.table("barbers").select("id, full_name").eq("id", barber_id).execute()
+        barber_check = supabase.table("barbers").select("id, name").eq("id", barber_id).execute()
         if not barber_check.data:
             raise HTTPException(status_code=404, detail="Barber không tồn tại")
         
@@ -127,7 +127,7 @@ def get_barber_average_rating(barber_id: str):
         if not ratings.data:
             return {
                 "barber_id": barber_id,
-                "barber_name": barber_check.data[0]["full_name"],
+                "name": barber_check.data[0]["name"],
                 "average_score": 0,
                 "total_ratings": 0
             }
@@ -139,7 +139,7 @@ def get_barber_average_rating(barber_id: str):
         
         return {
             "barber_id": barber_id,
-            "barber_name": barber_check.data[0]["full_name"],
+            "name": barber_check.data[0]["name"],
             "average_score": average_score,
             "total_ratings": total_ratings
         }
