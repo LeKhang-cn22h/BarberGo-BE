@@ -1,9 +1,10 @@
 from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Form
-from app.schemas.barbers_schema import BarberCreate, BarberUpdate, BarberResponse
+from app.schemas.barbers_schema import BarberCreate, BarberUpdate, BarberResponse, LocationUpdate
 from app.services import barbers_service
 from typing import List, Optional
 from uuid import UUID
 from decimal import Decimal
+import json
 
 router = APIRouter(
     prefix="/barbers",
@@ -14,21 +15,14 @@ router = APIRouter(
 async def create_barber(
     name: str = Form(...),
     user_id: str = Form(...),
-    location: Optional[str] = Form(None),
-    area: Optional[str] = Form(None),
-    address: Optional[str] = Form(None),
-    image: Optional[UploadFile] = File(None)
 ):
     """Tạo barber mới với upload ảnh"""
     try:
         barber_data = BarberCreate(
             name=name,
-            location=location,
-            area=area,
-            address=address,
             user_id=UUID(user_id)
         )
-        return barbers_service.create_barber(barber_data, image)
+        return barbers_service.create_barber(barber_data)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Invalid input: {str(e)}")
 
@@ -70,7 +64,7 @@ def get_barbers_by_location(location: str):
 
 @router.get("/area", response_model=List[BarberResponse])
 def get_barbers_by_area(area: str = Query(...)):
-    "lấy tất cả barber thoi area"
+    """Lấy tất cả barber theo area"""
     return barbers_service.get_barbers_by_area(area)
 
 
@@ -90,18 +84,34 @@ def get_barber(barber_id: UUID):
 async def update_barber(
     barber_id: UUID,
     name: Optional[str] = Form(None),
-    location: Optional[str] = Form(None),
     area: Optional[str] = Form(None),
     address: Optional[str] = Form(None),
     rank: Optional[str] = Form(None),
     status: Optional[bool] = Form(None),
+    location: Optional[str] = Form(None, description='JSON string: {"lat": 10.8520, "lng": 106.6190}'),
     image: Optional[UploadFile] = File(None)
 ):
-    """Update barber với option upload ảnh mới"""
+    """
+    Update barber với option upload ảnh mới và location
+    
+    - **location**: JSON string chứa lat và lng, ví dụ: {"lat": 10.8520, "lng": 106.6190}
+    """
     try:
+        # Parse location nếu có
+        location_obj = None
+        if location:
+            try:
+                location_data = json.loads(location)
+                location_obj = LocationUpdate(**location_data)
+            except (json.JSONDecodeError, ValueError) as e:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Invalid location format. Expected JSON with lat and lng: {str(e)}"
+                )
+        
         update_data = BarberUpdate(
             name=name,
-            location=location,
+            location=location_obj,
             area=area,
             address=address,
             rank=Decimal(rank) if rank else None,
@@ -110,6 +120,22 @@ async def update_barber(
         return barbers_service.update_barber(barber_id, update_data, image)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Invalid input: {str(e)}")
+
+
+# Update chỉ location
+@router.patch("/location/{barber_id}", response_model=BarberResponse)
+async def update_barber_location(
+    barber_id: UUID,
+    lat: float = Form(..., ge=-90, le=90, description="Vĩ độ (Latitude)"),
+    lng: float = Form(..., ge=-180, le=180, description="Kinh độ (Longitude)")
+):
+    """
+    Update location (tọa độ) của barber
+    
+    - **lat**: Vĩ độ (10.8520 cho HCMC)
+    - **lng**: Kinh độ (106.6190 cho HCMC)
+    """
+    return barbers_service.update_barber_location(barber_id, lat, lng)
 
 
 @router.patch("/{barber_id}/deactivate", response_model=BarberResponse)
