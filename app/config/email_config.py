@@ -18,6 +18,7 @@ class EmailSettings(BaseSettings):
 
 email_settings = EmailSettings()
 
+# ✅ THÊM PHẦN NÀY - Tạo ConnectionConfig object
 conf = ConnectionConfig(
     MAIL_USERNAME=email_settings.MAIL_USERNAME,
     MAIL_PASSWORD=email_settings.MAIL_PASSWORD,
@@ -28,6 +29,5 @@ conf = ConnectionConfig(
     MAIL_STARTTLS=email_settings.MAIL_STARTTLS,
     MAIL_SSL_TLS=email_settings.MAIL_SSL_TLS,
     USE_CREDENTIALS=email_settings.USE_CREDENTIALS,
-    VALIDATE_CERTS=email_settings.VALIDATE_CERTS,
-    TEMPLATE_FOLDER='templates/email'  # folder chứa template HTML
+    VALIDATE_CERTS=email_settings.VALIDATE_CERTS
 )
