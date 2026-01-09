@@ -15,6 +15,7 @@ class User(BaseModel):
     full_name: Optional[str] = None
     phone: Optional[str] = None
     avatar_url: Optional[str] = None
+    role:str = "user"
 
 # Dùng cho route đăng nhập user
 class UserLogin(BaseModel):

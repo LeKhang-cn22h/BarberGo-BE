@@ -5,6 +5,7 @@ import os
 from typing import List, Dict, Optional
 from dotenv import load_dotenv
 import time
+import json
 
 from sympy import content
 
@@ -98,7 +99,7 @@ class RAGService:
             'đặt lịch', 'hủy lịch', 'app', 'ứng dụng', 'barbergo',
             'thanh toán', 'đối tác', 'tài khoản', 'mật khẩu', 'đăng ký',
             'đăng nhập', 'quên mật khẩu', 'hủy tài khoản', 'cài đặt',
-            'thông báo', 'ưu đãi', 'khuyến mãi', 'giảm giá'
+            'thông báo', 'lịch hẹn', 'lịch đặt', 'lịch','dịch vụ','booking'
         ]
         
         # Keywords về làm đẹp
@@ -112,7 +113,7 @@ class RAGService:
         # Keywords chào hỏi
         greeting_keywords = [
             'chào', 'hello', 'hi', 'xin chào', 'hey', 'hế lô',
-            'khỏe không', 'bạn là ai', 'bạn tên gì', 'cảm ơn', 'thanks'
+            'khỏe không', 'bạn là ai', 'bạn tên gì', 'cảm ơn', 'thanks','alo','chào','ê','bye'
         ]
         
         question_lower = question.lower()
@@ -397,24 +398,36 @@ CÂU TRẢ LỜI:"""
             print(f"Lỗi cập nhật session: {e}")
             return False
     
-    def create_document(self,content:str, output:str,extra_metadata:dict |None=None) ->bool:
+    def create_document(self, content: str, output: str, extra_metadata: dict | None = None) -> bool:
         try:
-            metadata={
-                "output":output
+            metadata = {
+                "input": content,  
+                "output": output
             }
+            
             if extra_metadata:
                 metadata.update(extra_metadata)
+            
+            metadata_json_string = json.dumps(metadata, ensure_ascii=False)
+            
             self.supabase.table("documents").insert({
-                "content":content,
-                "embedding":self.generate_embedding(content),
-                "metadata":metadata
+                "content": content,
+                "embedding": self.generate_embedding(content),
+                "metadata": metadata_json_string  # JSON STRING
             }).execute()
+            
             return True
         except Exception as e:
-            print(f"Lỗi tạo document: {e}")
+            print(f" Lỗi tạo document: {e}")
             return False
 
-    def update_document(self,document_id: int,new_content: str | None = None,new_output: str | None = None,new_metadata: dict | None = None) -> bool:
+    def update_document(
+    self,
+    document_id: int,
+    new_content: str | None = None,
+    new_output: str | None = None,
+    new_metadata: dict | None = None
+) -> bool:
         try:
             update_data = {}
 
@@ -432,7 +445,11 @@ CÂU TRẢ LỜI:"""
                     .single() \
                     .execute()
 
-                metadata = old_doc.data["metadata"]
+                # Parse JSON string → dict
+                if isinstance(old_doc.data["metadata"], str):
+                    metadata = json.loads(old_doc.data["metadata"])
+                else:
+                    metadata = old_doc.data["metadata"]
 
                 if new_output:
                     metadata["output"] = new_output
@@ -440,7 +457,8 @@ CÂU TRẢ LỜI:"""
                 if new_metadata:
                     metadata.update(new_metadata)
 
-                update_data["metadata"] = metadata
+                # Convert dict → JSON string
+                update_data["metadata"] = json.dumps(metadata, ensure_ascii=False)
 
             # 3. Update DB
             result = self.supabase.table("documents") \
@@ -464,11 +482,7 @@ CÂU TRẢ LỜI:"""
         except Exception as e:
             print(f"Lỗi xóa document: {e}")
             return False
-    def get_all_documents(
-    self,
-    limit: int = 100,
-    offset: int = 0
-    ):
+    def get_all_documents(self, limit: int = 100, offset: int = 0):
         """
         Lấy danh sách tất cả documents (có phân trang)
         """
@@ -479,7 +493,29 @@ CÂU TRẢ LỜI:"""
                 .order("id", desc=False) \
                 .execute()
 
-            return result.data
+            #  Parse metadata từ JSON string → dict
+            documents = []
+            for doc in result.data:
+                parsed_doc = {
+                    "id": doc["id"],
+                    "content": doc["content"],
+                    "metadata": {}
+                }
+                
+                # Parse metadata
+                if isinstance(doc.get("metadata"), str):
+                    try:
+                        parsed_doc["metadata"] = json.loads(doc["metadata"])
+                    except json.JSONDecodeError as e:
+                        print(f" Cannot parse metadata for doc {doc['id']}: {e}")
+                        parsed_doc["metadata"] = {"output": ""}
+                else:
+                    # Nếu đã là dict rồi (không chắc)
+                    parsed_doc["metadata"] = doc.get("metadata", {})
+                
+                documents.append(parsed_doc)
+
+            return documents
 
         except Exception as e:
             print(f"Lỗi lấy danh sách documents: {e}")
@@ -495,10 +531,19 @@ CÂU TRẢ LỜI:"""
                 .single() \
                 .execute()
 
-            return result.data
+            doc = result.data
+            
+            #  Parse metadata
+            if isinstance(doc.get("metadata"), str):
+                try:
+                    doc["metadata"] = json.loads(doc["metadata"])
+                except:
+                    doc["metadata"] = {"output": ""}
+            
+            return doc
 
         except Exception as e:
-            print(f"Lỗi lấy document {document_id}: {e}")
+            print(f" Lỗi lấy document {document_id}: {e}")
             return None
     
     def search_documents_by_keyword(self, keyword: str):
@@ -508,9 +553,21 @@ CÂU TRẢ LỜI:"""
                 .ilike("content", f"%{keyword}%") \
                 .execute()
 
-            return result.data
+            #  Parse metadata
+            documents = []
+            for doc in result.data:
+                if isinstance(doc.get("metadata"), str):
+                    try:
+                        doc["metadata"] = json.loads(doc["metadata"])
+                    except:
+                        doc["metadata"] = {"output": ""}
+                
+                documents.append(doc)
+
+            return documents
+            
         except Exception as e:
-            print(f"Lỗi search document: {e}")
+            print(f" Lỗi search document: {e}")
             return []
 
 # Singleton instance

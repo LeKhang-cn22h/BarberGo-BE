@@ -113,6 +113,7 @@ def login_user(data: UserLogin):
                 "full_name": user_data.get("full_name"),
                 "phone": user_data.get("phone"),
                 "avatar_url": user_data.get("avatar_url"),
+                "role": user_data.get("role", "user"),
                 "email_confirmed": True
             },
             "access_token": auth_response.session.access_token,

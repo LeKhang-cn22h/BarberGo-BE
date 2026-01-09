@@ -8,12 +8,14 @@ from app.schemas.rag_schema import (
     ChatSessionsResponse, ChatSession,
     CreateSessionRequest, UpdateSessionRequest
 )
+import traceback
 
 router = APIRouter(prefix="/api/chatbot", tags=["Chatbot RAG"])
 
 # ====================================
 # 1. CHAT ENDPOINT 
 # ====================================
+
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat_with_rag(request: ChatRequest):
@@ -63,6 +65,7 @@ async def chat_with_rag(request: ChatRequest):
         return result
         
     except Exception as e:
+        traceback.print_exc()
         raise HTTPException(
             status_code=500,
             detail=f"Lỗi khi xử lý câu hỏi: {str(e)}"
@@ -96,6 +99,7 @@ async def create_session(request: CreateSessionRequest):
         }
         
     except Exception as e:
+        
         raise HTTPException(
             status_code=500,
             detail=f"Lỗi khi tạo session: {str(e)}"
@@ -313,29 +317,29 @@ async def create_document(request: dict):
             status_code=500,
             detail=f"Lỗi khi tạo document: {str(e)}"
         )
-
 @router.get("/documents")
 async def list_documents(
-    limit: int = Query(100, ge=1, le=1000, description="Số lượng documents"),
+    limit: int = Query(50, ge=1, le=200, description="Số lượng documents"),
     offset: int = Query(0, ge=0, description="Vị trí bắt đầu")
 ):
     """
-     Lấy danh sách tất cả documents (có phân trang)
-    
-    **Parameters:**
-    - **limit**: Số lượng documents tối đa (mặc định: 100)
-    - **offset**: Vị trí bắt đầu (mặc định: 0)
-    
-    **Returns:**
-    - Danh sách documents với content, metadata
+    📄 Lấy danh sách tất cả documents (có phân trang)
     """
     try:
+        # ✅ Lấy total count
+        count_result = rag_service.supabase.table("documents") \
+            .select("*", count="exact") \
+            .execute()
+        
+        total_count = count_result.count
+        
         documents = rag_service.get_all_documents(limit=limit, offset=offset)
         
         return {
-            "total": len(documents),
+            "total": total_count,
             "limit": limit,
             "offset": offset,
+            "has_more": (offset + limit) < total_count,
             "documents": documents
         }
         

@@ -5,7 +5,8 @@ from typing import List, Optional
 from uuid import UUID
 import uuid
 from pathlib import Path
-
+from geopy.geocoders import Nominatim
+from geopy.exc import GeocoderTimedOut
 BUCKET_NAME = "imgBarber"
 
 def upload_barber_image(file: UploadFile, barber_id: str) -> str:
@@ -239,16 +240,66 @@ def update_barber(
         if new_image_url:
             delete_barber_image(new_image_url)
         raise HTTPException(status_code=500, detail=f"Error updating barber: {str(e)}")
-
-
-# Update chỉ location
+# Thiết lập geolocator
+geolocator = Nominatim(user_agent="barber_app_v1")
+# Lấy address và area từ tọa độ lat, lng
+def get_address_from_coords(lat: float, lng: float):
+    """
+    Lấy address và area từ tọa độ lat, lng
+    Returns: (full_address, area)
+    """
+    try:
+        print(f" Geocoding coordinates: {lat}, {lng}")
+        
+        # Gọi API Nominatim để lấy địa chỉ (timeout 10s)
+        location = geolocator.reverse(f"{lat}, {lng}", timeout=10, language='vi')
+        
+        if location:
+            address_info = location.raw.get('address', {})
+            
+            print(f" Raw address data: {address_info}")
+            
+            # 1. Tạo địa chỉ đầy đủ (Full Address)
+            full_address = location.address
+            
+            # 2. Xác định Area (Ưu tiên: Quận > Huyện > Thành phố)
+            # Nominatim trả về các key khác nhau tùy khu vực
+            area = (
+                address_info.get('city_district') or  # Quận (VD: Quận 1, Quận 2)
+                address_info.get('suburb') or         # Phường/Xã
+                address_info.get('county') or         # Huyện
+                address_info.get('state_district') or # Quận/Huyện (alternative)
+                address_info.get('town') or           # Thị trấn
+                address_info.get('city') or           # Thành phố
+                address_info.get('state') or          # Tỉnh/Thành
+                "Unknown Area"
+            )
+            
+            print(f" Parsed address: {full_address}")
+            print(f" Parsed area: {area}")
+            
+            return full_address, area
+        else:
+            print(" No location data returned from Nominatim")
+            return None, None
+            
+    except GeocoderTimedOut:
+        print(" Geocoding timeout - API took too long")
+        return None, None
+    except Exception as e:
+        print(f" Geocoding error: {e}")
+        return None, None
+# Update chỉ location và tự động cập nhật address + area
 def update_barber_location(barber_id: UUID, lat: float, lng: float) -> BarberResponse:
-    """Update location của barber"""
+    """Update location của barber và tự động cập nhật address + area"""
     try:
         # Kiểm tra barber có tồn tại không
         get_barber_by_id(barber_id)
         
-        # Gọi function update_location
+        print(f" Updating location for barber {barber_id}")
+        print(f"   Lat: {lat}, Lng: {lng}")
+        
+        # 1. Gọi function update_location để cập nhật tọa độ
         supabase.rpc(
             'update_location',
             {
@@ -258,12 +309,48 @@ def update_barber_location(barber_id: UUID, lat: float, lng: float) -> BarberRes
             }
         ).execute()
         
-        # Lấy lại dữ liệu sau khi update
-        return get_barber_by_id(barber_id)
+        print(" Location (lat/lng) updated successfully")
+        
+        # 2. Lấy address và area từ tọa độ
+        print(" Fetching address from coordinates...")
+        address, area = get_address_from_coords(lat, lng)
+        
+        if address and area:
+            print(f" Address found: {address}")
+            print(f" Area found: {area}")
+            
+            # 3. Update address và area vào database
+            update_data = {
+                "address": address,
+                "area": area
+            }
+            
+            response = supabase.table("barbers")\
+                .update(update_data)\
+                .eq("id", str(barber_id))\
+                .execute()
+            
+            if response.data:
+                print(" Address and area updated successfully")
+            else:
+                print("Failed to update address and area")
+        else:
+            print(" Could not fetch address from coordinates")
+        
+        # 4. Lấy lại dữ liệu sau khi update
+        updated_barber = get_barber_by_id(barber_id)
+        
+        print(f" Final barber data:")
+        print(f"   Name: {updated_barber.name}")
+        print(f"   Address: {updated_barber.address}")
+        print(f"   Area: {updated_barber.area}")
+        
+        return updated_barber
         
     except HTTPException:
         raise
     except Exception as e:
+        print(f" Error updating location: {str(e)}")
         raise HTTPException(
             status_code=500, 
             detail=f"Error updating location: {str(e)}"

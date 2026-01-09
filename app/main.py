@@ -9,13 +9,25 @@ from app.routers.Hairstyle_router import router as Hairstyle_router
 from app.routers.appointment_router import router as appointment_router
 from app.routers.time_slot_router import router as time_slot_router
 from app.routers.rag_router import router as rag_router
-
+from fastapi.middleware.cors import CORSMiddleware
+from app.routers.email_router import router as email_router
 app = FastAPI(
     title="Acne Detection API and Supabase FastAPI",
     description="API phát hiện mụn sử dụng YOLOv8 và MediaPipe Face Mesh và quản lý người dùng với Supabase",
     version="1.0.0"
 )
-
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",      # Vue dev server
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",      # Backup
+        "http://127.0.0.1:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],              # GET, POST, PUT, DELETE, OPTIONS
+    allow_headers=["*"],              # Authorization, Content-Type, etc.
+)
 app.include_router(acne_router)
 app.include_router(user_router)
 app.include_router(barbers_router)
@@ -27,6 +39,8 @@ app.include_router(time_slot_router)
 app.include_router(rag_router)
 
 app.include_router(Hairstyle_router)
+app.include_router(email_router)
+
 
 @app.get("/")
 async def root():
