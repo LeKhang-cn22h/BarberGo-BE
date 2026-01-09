@@ -1,4 +1,4 @@
-from app.database.supabase_client import supabase
+from app.database.supabase_client import supabase, supabase_admin
 from app.schemas.user_schema import (
     RegisterRequest,
     UserUpdate,
@@ -222,7 +222,7 @@ def create_owner_account(data):
             raise HTTPException(status_code=400, detail="Email đã được đăng ký")
         
         # Tạo user với admin API - TỰ ĐỘNG CONFIRM EMAIL
-        auth_response = supabase.auth.admin.create_user({
+        auth_response = supabase_admin.auth.admin.create_user({
             "email": data.email,
             "password": data.password,
             "email_confirm": True,  # ← TỰ ĐỘNG CONFIRM
@@ -250,15 +250,13 @@ def create_owner_account(data):
         supabase.table("users").insert(user_data).execute()
 
         return {
-            "message": "Tạo tài khoản owner thành công. Có thể đăng nhập ngay không cần confirm email.",
-            "user": {
-                "id": user_id,
-                "email": data.email,
-                "full_name": data.full_name,
-                "phone": data.phone,
-                "role": "owner",
-                "email_confirmed": True
-            }
+            "id": user_id,  # ← Id phải ở top level
+            "email": data.email,
+            "full_name": data.full_name,
+            "phone": data.phone,
+            "role": "owner",
+            "email_confirmed": True,
+            "created_at": user_data["created_at"]
         }
     except HTTPException:
         raise

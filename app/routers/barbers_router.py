@@ -16,16 +16,38 @@ async def create_barber(
     name: str = Form(...),
     user_id: str = Form(...),
 ):
-    """Tạo barber mới với upload ảnh"""
+    """Tạo barber mới"""
+    # ✅ Thêm debug log
+    print("=" * 60)
+    print("🔵 CREATE BARBER REQUEST")
+    print(f"name: {name}")
+    print(f"user_id: {user_id}")
+    print(f"name type: {type(name)}")
+    print(f"user_id type: {type(user_id)}")
+    print("=" * 60)
+    
     try:
         barber_data = BarberCreate(
             name=name,
             user_id=UUID(user_id)
         )
-        return barbers_service.create_barber(barber_data)
+        
+        print(f"✅ BarberCreate validated: {barber_data}")
+        
+        result = barbers_service.create_barber(barber_data)
+        
+        print(f"✅ Barber created: {result}")
+        print("=" * 60)
+        
+        return result
     except ValueError as e:
+        print(f"❌ ValueError: {str(e)}")
+        print("=" * 60)
         raise HTTPException(status_code=400, detail=f"Invalid input: {str(e)}")
-
+    except Exception as e:
+        print(f"❌ Exception: {str(e)}")
+        print("=" * 60)
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
 
 @router.get("/", response_model=List[BarberResponse])
 def get_all_barbers(
