@@ -1,4 +1,7 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from app.api.acneAPI import router as acne_router
 from app.routers.user_router import router as user_router
 from app.routers.barbers_router import router as barbers_router
@@ -11,11 +14,18 @@ from app.routers.time_slot_router import router as time_slot_router
 from app.routers.rag_router import router as rag_router
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers.email_router import router as email_router
+
+limiter = Limiter(key_func=get_remote_address)
+
 app = FastAPI(
     title="Acne Detection API and Supabase FastAPI",
     description="API phát hiện mụn sử dụng YOLOv8 và MediaPipe Face Mesh và quản lý người dùng với Supabase",
     version="1.0.0"
 )
+# Add limiter to app
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[

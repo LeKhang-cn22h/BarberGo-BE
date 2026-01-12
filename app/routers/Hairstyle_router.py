@@ -3,7 +3,7 @@ Hair Style API Router
 File: app/routers/hairstyle_router.py
 """
 
-from fastapi import APIRouter, File, UploadFile, HTTPException, BackgroundTasks, Query, Depends, Form
+from fastapi import APIRouter, File, UploadFile, HTTPException, BackgroundTasks, Query, Depends, Request, Form
 from fastapi.responses import StreamingResponse, FileResponse, JSONResponse
 from typing import List, Optional, Dict
 import cv2
@@ -17,12 +17,15 @@ import logging
 import zipfile
 import json
 import base64
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 # Adjust imports based on your project structure
 # from app.services.hairstyle_service_sdxl_inpainting import get_hair_generator
 # from app.config.hair_config import HairStylePrompts
 
 logger = logging.getLogger(__name__)
+limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(
     prefix="/api/v1/hairstyle",
@@ -41,7 +44,8 @@ class JobStatus:
 
 
 @router.get("/")
-async def hairstyle_info():
+@limiter.limit("120/minute")
+async def hairstyle_info(request:Request):
     """Get hair style generation service info"""
     return {
         "service": "Hair Style Generation",
@@ -68,7 +72,8 @@ async def hairstyle_info():
 
 
 @router.get("/styles")
-async def get_available_styles():
+@limiter.limit("120/minute")
+async def get_available_styles(request:Request):
     """Get list of all available hair styles"""
     try:
         # Import config
@@ -96,7 +101,9 @@ async def get_available_styles():
 
 
 @router.post("/generate")
+@limiter.limit("10/minute")
 async def generate_single_style(
+    request:Request,
     file: UploadFile = File(..., description="Input face image"),
     style: str = Query(..., description="Hair style ID"),
     seed: Optional[int] = Query(None, description="Random seed for reproducibility"),
@@ -193,7 +200,9 @@ async def generate_single_style(
 
 
 @router.post("/generate-advanced")
-async def generate_advanced(
+@limiter.limit("10/minute")
+
+async def generate_advanced(request:Request,
     file: UploadFile = File(..., description="Input face image"),
     style: str = Form(..., description="Hair style ID"),
     prompt: Optional[str] = Form(None, description="Custom prompt (overrides style prompt)"),
@@ -272,7 +281,10 @@ async def generate_advanced(
 
 
 @router.post("/create-mask")
+@limiter.limit("10/minute")
+
 async def create_mask(
+    request:Request,
     file: UploadFile = File(...),
     method: str = Query("auto", description="Mask creation method: auto, sam, fallback, or points"),
     points: Optional[str] = Query(None, description="JSON array of points for manual mask [[x1,y1],[x2,y2],...]")

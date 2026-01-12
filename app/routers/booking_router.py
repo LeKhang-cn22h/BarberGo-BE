@@ -1,14 +1,17 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from app.schemas.booking_schema import BookingCreate
 from app.services import booking_service
 from app.dependencies.current_user import get_current_user
-
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 router = APIRouter(prefix="/bookings", tags=["Bookings"])
 
+limiter = Limiter(key_func=get_remote_address)
 # ==================== Create ====================
 
 @router.post("/", dependencies=[Depends(get_current_user)])
-def create_booking(data: BookingCreate):
+@limiter.limit("30/minute")
+def create_booking(request:Request,data: BookingCreate):
     """
     Tạo booking mới với nhiều dịch vụ
     - Yêu cầu đăng nhập
@@ -21,7 +24,8 @@ def create_booking(data: BookingCreate):
 #  Thứ tự quan trọng: Routes CỤ THỂ phải đứng TRƯỚC routes CHUNG
 
 @router.get("/", dependencies=[Depends(get_current_user)])
-def get_all_bookings():
+@limiter.limit("120/minute")
+def get_all_bookings(request:Request):
     """
     Lấy danh sách tất cả bookings với đầy đủ thông tin
     - Yêu cầu đăng nhập (admin)
@@ -30,7 +34,8 @@ def get_all_bookings():
 
 
 @router.get("/status/{status}")
-def get_bookings_by_status(status: str):
+@limiter.limit("120/minute")
+def get_bookings_by_status(request:Request,status: str):
     """
     Lấy danh sách bookings theo status
     - status: confirmed, completed, cancelled
@@ -39,7 +44,9 @@ def get_bookings_by_status(status: str):
 
 
 @router.get("/user/{user_id}", dependencies=[Depends(get_current_user)])
-def get_user_bookings(user_id: str):
+@limiter.limit("120/minute")
+
+def get_user_bookings(request:Request,user_id: str):
     """
     Lấy danh sách bookings của 1 user
     - Yêu cầu đăng nhập
@@ -48,7 +55,9 @@ def get_user_bookings(user_id: str):
 
 
 @router.get("/barber/{barber_id}", dependencies=[Depends(get_current_user)])
-def get_barber_bookings(barber_id: str):
+@limiter.limit("120/minute")
+
+def get_barber_bookings(request:Request,barber_id: str):
     """
     Lấy danh sách bookings của 1 barber
     - Yêu cầu đăng nhập
@@ -58,7 +67,9 @@ def get_barber_bookings(barber_id: str):
 
 #  Route với path parameter động phải đặt CUỐI CÙNG
 @router.get("/{booking_id}", dependencies=[Depends(get_current_user)])
-def get_booking(booking_id: int):
+@limiter.limit("120/minute")
+
+def get_booking(request:Request,booking_id: int):
     """
     Lấy thông tin chi tiết 1 booking
     - Bao gồm user, barber, time_slot, và danh sách services
@@ -68,10 +79,11 @@ def get_booking(booking_id: int):
 
 
 # ==================== Update ====================
-#  Routes với path cụ thể (/{booking_id}/status) phải đứng TRƯỚC /{booking_id}
 
 @router.patch("/{booking_id}/status", dependencies=[Depends(get_current_user)])
-def update_booking_status(
+@limiter.limit("30/minute")
+
+def update_booking_status(request:Request,
     booking_id: int, 
     status: str = Query(..., description="confirmed, completed, cancelled")
 ):
@@ -84,7 +96,8 @@ def update_booking_status(
 
 
 @router.patch("/{booking_id}/cancel", dependencies=[Depends(get_current_user)])
-def cancel_booking(booking_id: int):
+@limiter.limit("30/minute")
+def cancel_booking(request:Request,booking_id: int):
     """
     Hủy booking (set status = cancelled và time_slot = available)
     - Yêu cầu đăng nhập

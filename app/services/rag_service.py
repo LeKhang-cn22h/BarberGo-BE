@@ -1,69 +1,95 @@
-from unittest import result
+"""
+Hybrid RAG Service: Ollama + Gemini
+- similarity >= 0.75: Dùng Ollama (local, fast)
+- similarity < 0.75: Dùng Gemini (cloud, powerful)
+"""
+
 import google.generativeai as genai
 from supabase import create_client
 import os
 from typing import List, Dict, Optional
 from dotenv import load_dotenv
-import time
 import json
+import time
 
-from sympy import content
+# Import Ollama Client (requests-based)
+from app.services.ollama_client import ollama_client
 
 load_dotenv()
 
-class RAGService:
+
+class HybridRAGService:
     def __init__(self):
-        """Khởi tạo RAG Service với Gemini và Supabase"""
-        # Configure Gemini
-        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-        self.embed_model = "models/text-embedding-004"
-        self.gen_model = genai.GenerativeModel("models/gemini-2.5-flash")
+        """Khởi tạo Hybrid RAG Service"""
         
-        # Configure Supabase
+        # Ollama config
+        self.ollama_chat_model = os.getenv("OLLAMA_CHAT_MODEL", "qwen2.5:7b")
+        self.ollama_embed_model = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
+        
+        # Gemini config
+        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+        self.gemini_embed_model = "models/text-embedding-004"
+        self.gemini_gen_model = genai.GenerativeModel("models/gemini-2.0-flash-exp")
+        
+        # Supabase
         self.supabase = create_client(
             os.getenv("SUPABASE_URL"),
             os.getenv("SUPABASE_KEY")
         )
+        
+        # Threshold để quyết định dùng model nào
+        self.similarity_threshold = 0.75
+        
+        print(" Hybrid RAG Service initialized")
+        print(f"   Ollama: {self.ollama_chat_model} + {self.ollama_embed_model}")
+        print(f"   Gemini: gemini-2.0-flash-exp")
+        print(f"   Threshold: {self.similarity_threshold}")
     
-    def generate_embedding(self, text: str) -> List[float]:
+    # ==================== EMBEDDING ====================
+    
+    def generate_embedding(self, text: str, use_ollama: bool = True) -> List[float]:
         """
-        Tạo embedding cho query của user
+        Generate embedding
         
         Args:
-            text: Câu hỏi của user
-            
-        Returns:
-            Vector embedding 768 chiều
+            text: Text to embed
+            use_ollama: True = Ollama, False = Gemini
         """
-        result = genai.embed_content(
-            model=self.embed_model,
-            content=text,
-            task_type="retrieval_document"
-        )
-        return result['embedding']
+        try:
+            if use_ollama:
+                # Ollama embedding (local, fast)
+                result = ollama_client.embeddings(
+                    model=self.ollama_embed_model,
+                    prompt=text
+                )
+                return result['embedding']
+            else:
+                # Gemini embedding (cloud)
+                result = genai.embed_content(
+                    model=self.gemini_embed_model,
+                    content=text,
+                    task_type="retrieval_document"
+                )
+                return result['embedding']
+        
+        except Exception as e:
+            print(f" Embedding error: {e}")
+            raise
+    
+    # ==================== SEARCH ====================
     
     def search_similar_documents(
-        self, 
-        query: str, 
+        self,
+        query: str,
         top_k: int = 3,
         similarity_threshold: float = 0.5
     ) -> List[Dict]:
-        """
-        Tìm kiếm documents tương tự với câu hỏi
-        
-        Args:
-            query: Câu hỏi của user
-            top_k: Số lượng documents trả về
-            similarity_threshold: Ngưỡng similarity tối thiểu
-            
-        Returns:
-            List các documents liên quan nhất
-        """
+        """Tìm kiếm documents tương tự"""
         try:
-            # 1. Tạo embedding cho query
-            query_embedding = self.generate_embedding(query)
+            # Generate embedding (dùng Ollama mặc định)
+            query_embedding = self.generate_embedding(query, use_ollama=True)
             
-            # 2. Gọi function match_documents trong Supabase
+            # Search in Supabase
             result = self.supabase.rpc(
                 "match_documents",
                 {
@@ -72,37 +98,40 @@ class RAGService:
                 }
             ).execute()
             
-            # 3. Filter by similarity threshold
-            filtered_docs = [
-                doc for doc in result.data 
-                if doc['similarity'] >= similarity_threshold
-            ]
+            # Parse và filter
+            filtered_docs = []
+            for doc in result.data:
+                if doc.get('similarity', 0) < similarity_threshold:
+                    continue
+                
+                # Parse metadata
+                metadata = doc.get('metadata', {})
+                if isinstance(metadata, str):
+                    try:
+                        metadata = json.loads(metadata)
+                    except:
+                        metadata = {"output": ""}
+                
+                doc['metadata'] = metadata
+                filtered_docs.append(doc)
             
             return filtered_docs
-            
+        
         except Exception as e:
-            print(f" Lỗi khi search documents: {e}")
+            print(f" Search error: {e}")
             return []
     
+    # ==================== CLASSIFICATION ====================
+    
     def classify_question(self, question: str) -> str:
-        """
-        Phân loại câu hỏi để xử lý phù hợp
-        
-        Returns: 
-            'barbergo_specific' - Câu hỏi về chức năng app
-            'beauty_related' - Câu hỏi về làm đẹp, cắt tóc
-            'greeting' - Chào hỏi, xã giao
-            'off_topic' - Hoàn toàn ngoài lề
-        """
-        # Keywords về BarberGo app
+        """Phân loại câu hỏi"""
         barbergo_keywords = [
             'đặt lịch', 'hủy lịch', 'app', 'ứng dụng', 'barbergo',
             'thanh toán', 'đối tác', 'tài khoản', 'mật khẩu', 'đăng ký',
             'đăng nhập', 'quên mật khẩu', 'hủy tài khoản', 'cài đặt',
-            'thông báo', 'lịch hẹn', 'lịch đặt', 'lịch','dịch vụ','booking'
+            'thông báo', 'lịch hẹn', 'lịch đặt', 'lịch', 'dịch vụ', 'booking'
         ]
         
-        # Keywords về làm đẹp
         beauty_keywords = [
             'tóc', 'cắt', 'nhuộm', 'uốn', 'duỗi', 'gội', 'massage',
             'spa', 'nail', 'móng', 'làm đẹp', 'chăm sóc da', 'mặt',
@@ -110,159 +139,143 @@ class RAGService:
             'barber', 'tóc nam', 'tóc nữ', 'kiểu tóc', 'phong cách'
         ]
         
-        # Keywords chào hỏi
         greeting_keywords = [
             'chào', 'hello', 'hi', 'xin chào', 'hey', 'hế lô',
-            'khỏe không', 'bạn là ai', 'bạn tên gì', 'cảm ơn', 'thanks','alo','chào','ê','bye'
+            'khỏe không', 'bạn là ai', 'bạn tên gì', 'cảm ơn', 'thanks', 'alo', 'ê', 'bye'
         ]
         
         question_lower = question.lower()
         
-        # Check greeting
         if any(kw in question_lower for kw in greeting_keywords):
             return 'greeting'
-        
-        # Check BarberGo specific
         if any(kw in question_lower for kw in barbergo_keywords):
             return 'barbergo_specific'
-        
-        # Check beauty related
         if any(kw in question_lower for kw in beauty_keywords):
             return 'beauty_related'
         
         return 'off_topic'
     
+    # ==================== ANSWER GENERATION ====================
+    
     def generate_answer(
-        self, 
-        question: str, 
+        self,
+        question: str,
         contexts: List[Dict]
     ) -> str:
         """
-        Generate câu trả lời dựa trên contexts từ knowledge base
+        Generate answer với hybrid strategy
         
-        Args:
-            question: Câu hỏi của user
-            contexts: Các documents liên quan
-            
-        Returns:
-            Câu trả lời từ Gemini
+        Strategy:
+        - similarity >= 0.75: Dùng Ollama (local, fast, confident)
+        - similarity < 0.75: Dùng Gemini (cloud, powerful, better reasoning)
         """
-        # Nếu có context với similarity cao (>0.65), trả lời từ knowledge base
-        if contexts and len(contexts) > 0:
-            # Build context từ retrieved documents
-            context_text = "\n\n".join([
-                f"Thông tin {i+1}:\n{doc['metadata']['output']}"
-                for i, doc in enumerate(contexts[:2])  # Chỉ lấy 2 contexts tốt nhất
-            ])
-            
-            # Tạo prompt cho Gemini
-            prompt = f"""Bạn là trợ lý ảo thông minh của ứng dụng BarberGo - ứng dụng đặt lịch cắt tóc và các dịch vụ làm đẹp tại Việt Nam.
+        
+        if not contexts or len(contexts) == 0:
+            return self._generate_fallback_answer(question, use_ollama=False)
+        
+        # Lấy similarity cao nhất
+        top_similarity = contexts[0].get('similarity', 0)
+        
+        # Build context text
+        context_text = "\n\n".join([
+            f"Thông tin {i + 1}:\n{doc['metadata']['output']}"
+            for i, doc in enumerate(contexts[:2])
+        ])
+        
+        prompt = f"""Bạn là trợ lý ảo của BarberGo - app đặt lịch cắt tóc.
+
+QUAN TRỌNG: TRẢ LỜI HOÀN TOÀN BẰNG TIẾNG VIỆT.
 
 THÔNG TIN TỪ KNOWLEDGE BASE:
 {context_text}
 
-CÂU HỎI CỦA KHÁCH HÀNG:
+CÂU HỎI:
 {question}
 
-HƯỚNG DẪN TRẢ LỜI:
-1. Dựa vào thông tin từ knowledge base để trả lời
-2. Trả lời ngắn gọn, rõ ràng (2-4 câu)
-3. Giọng điệu thân thiện, chuyên nghiệp
-4. Nếu có nhiều bước, liệt kê rõ ràng
-5. Trả lời trực tiếp, không nói "Dựa vào thông tin..."
-
-CÂU TRẢ LỜI:"""
-            
-            try:
-                time.sleep(0.5)  # Rate limiting
-                response = self.gen_model.generate_content(prompt)
-                return response.text
-            except Exception as e:
-                print(f"Lỗi khi generate answer: {e}")
-                # Fallback: trả về answer từ database
-                return contexts[0]['metadata']['output']
-        
-        # Không có context phù hợp -> xử lý theo loại câu hỏi
-        return self._generate_fallback_answer(question)
-    
-    def _generate_fallback_answer(self, question: str) -> str:
-        """
-        Generate câu trả lời khi không tìm thấy context phù hợp
-        Xử lý thông minh dựa trên loại câu hỏi
-        """
-        question_type = self.classify_question(question)
-        
-        # 1. Chào hỏi, xã giao
-        if question_type == 'greeting':
-            prompt = f"""Bạn là trợ lý ảo thân thiện của BarberGo - app đặt lịch cắt tóc.
-
-Khách hàng nói: {question}
-
-Hãy:
-1. Trả lời thân thiện, tự nhiên
-2. Giới thiệu ngắn gọn bạn có thể giúp gì (về đặt lịch, dịch vụ làm đẹp)
-3. Ngắn gọn 2-3 câu
-
-VÍ DỤ:
-- "Chào bạn! Mình là trợ lý ảo của BarberGo. Mình có thể giúp bạn đặt lịch cắt tóc, tìm salon gần nhà, hoặc giải đáp thắc mắc về dịch vụ. Bạn cần hỗ trợ gì không?"
-
-CÂU TRẢ LỜI:"""
-        
-        # 2. Câu hỏi về làm đẹp chung (không có trong DB)
-        elif question_type == 'beauty_related':
-            prompt = f"""Bạn là chuyên gia làm đẹp của ứng dụng BarberGo.
-
-Câu hỏi về làm đẹp: {question}
-
-Hãy:
-1. Trả lời ngắn gọn, hữu ích dựa trên kiến thức chung về làm đẹp (2-3 câu)
-2. Gợi ý đặt lịch trên BarberGo để được tư vấn trực tiếp
-3. Giọng điệu thân thiện, chuyên nghiệp
-
-VÍ DỤ:
-- Câu hỏi: "Tóc dài bao lâu nên cắt?"
-- Trả lời: "Thông thường nên cắt tóc 4-6 tuần một lần để giữ kiểu đẹp và loại bỏ ngọn tóc hư tổn. Bạn có thể đặt lịch với stylist trên BarberGo để được tư vấn cụ thể dựa trên kiểu tóc và tình trạng tóc của mình nhé!"
-
-CÂU TRẢ LỜI:"""
-        
-        # 3. Câu hỏi về BarberGo nhưng không có trong DB
-        elif question_type == 'barbergo_specific':
-            prompt = f"""Bạn là trợ lý của BarberGo.
-
-Khách hàng hỏi về tính năng app: {question}
-
-Bạn không có thông tin cụ thể trong hệ thống. Hãy:
-1. Xin lỗi lịch sự
-2. Gợi ý liên hệ bộ phận hỗ trợ (chat trong app hoặc hotline)
-3. Ngắn gọn 2 câu
-
-CÂU TRẢ LỜI:"""
-        
-        # 4. Hoàn toàn ngoài lề
-        else:  # off_topic
-            prompt = f"""Bạn là trợ lý của BarberGo - app đặt lịch làm đẹp.
-
-Khách hàng hỏi: {question}
-
-Câu hỏi này KHÔNG liên quan đến làm đẹp hoặc BarberGo. Hãy:
-1. Lịch sự từ chối (không trả lời câu hỏi off-topic)
-2. Nhắc bạn chỉ hỗ trợ về đặt lịch và dịch vụ làm đẹp
-3. Hỏi xem có thể giúp gì về chủ đề này
-4. Ngắn gọn, thân thiện (2 câu)
-
-VÍ DỤ:
-- "Tôi là trợ lý chuyên về đặt lịch cắt tóc và dịch vụ làm đẹp nên không thể trả lời câu hỏi này được. Bạn có cần hỗ trợ gì về BarberGo không? 😊"
+HƯỚNG DẪN:
+1. Trả lời BẰNG TIẾNG VIỆT
+2. Dựa vào knowledge base
+3. Ngắn gọn 2-4 câu
+4. Thân thiện, chuyên nghiệp
+5. Trả lời trực tiếp
 
 CÂU TRẢ LỜI:"""
         
         try:
-            time.sleep(0.5)  # Rate limiting
-            response = self.gen_model.generate_content(prompt)
-            return response.text
-        except Exception as e:
-            print(f"Lỗi fallback: {e}")
+            #  STRATEGY: Similarity >= 0.75 → Ollama, < 0.75 → Gemini
+            if top_similarity >= self.similarity_threshold:
+                # High confidence → Dùng Ollama (fast, local)
+                print(f" Using Ollama (similarity: {top_similarity:.2f})")
+                
+                response = ollama_client.chat(
+                    model=self.ollama_chat_model,
+                    messages=[{'role': 'user', 'content': prompt}],
+                    options={
+                        'temperature': 0.7,
+                        'num_predict': 500
+                    }
+                )
+                return response['message']['content']
             
-            # Hard fallback dựa trên loại
+            else:
+                # Lower confidence → Dùng Gemini (powerful, better reasoning)
+                print(f"Using Gemini (similarity: {top_similarity:.2f})")
+                
+                time.sleep(0.5)  # Rate limiting
+                response = self.gemini_gen_model.generate_content(prompt)
+                return response.text
+        
+        except Exception as e:
+            print(f" Generate answer error: {e}")
+            # Fallback: trả output từ database
+            return contexts[0]['metadata']['output']
+    
+    def _generate_fallback_answer(self, question: str, use_ollama: bool = False) -> str:
+        """
+        Generate fallback answer khi không có context
+        
+        Args:
+            use_ollama: True = Ollama, False = Gemini (default)
+        """
+        question_type = self.classify_question(question)
+        
+        prompts = {
+            'greeting': f"""Bạn là trợ lý ảo của BarberGo. TRẢ LỜI BẰNG TIẾNG VIỆT.
+Khách hàng: {question}
+Hãy chào hỏi thân thiện, giới thiệu ngắn gọn bạn có thể giúp gì. 2-3 câu.""",
+            
+            'beauty_related': f"""Bạn là chuyên gia làm đẹp của BarberGo. TRẢ LỜI BẰNG TIẾNG VIỆT.
+Câu hỏi: {question}
+Trả lời ngắn gọn, gợi ý đặt lịch trên BarberGo. 2-3 câu.""",
+            
+            'barbergo_specific': f"""Bạn là trợ lý BarberGo. TRẢ LỜI BẰNG TIẾNG VIỆT.
+Câu hỏi: {question}
+Xin lỗi lịch sự, gợi ý liên hệ hỗ trợ. 2 câu.""",
+            
+            'off_topic': f"""Bạn là trợ lý BarberGo. TRẢ LỜI BẰNG TIẾNG VIỆT.
+Câu hỏi: {question}
+Lịch sự từ chối, nhắc chỉ hỗ trợ về làm đẹp. 2 câu."""
+        }
+        
+        prompt = prompts.get(question_type, prompts['off_topic'])
+        
+        try:
+            if use_ollama:
+                response = ollama_client.chat(
+                    model=self.ollama_chat_model,
+                    messages=[{'role': 'user', 'content': prompt}],
+                    options={'temperature': 0.7, 'num_predict': 300}
+                )
+                return response['message']['content']
+            else:
+                time.sleep(0.5)
+                response = self.gemini_gen_model.generate_content(prompt)
+                return response.text
+        
+        except Exception as e:
+            print(f" Fallback error: {e}")
+            
+            # Hard fallback
             fallback_responses = {
                 'greeting': "Chào bạn! Mình là trợ lý ảo của BarberGo. Mình có thể giúp bạn đặt lịch cắt tóc, tìm salon, hoặc giải đáp thắc mắc về dịch vụ. Bạn cần hỗ trợ gì không?",
                 'beauty_related': "Mình nghĩ bạn nên tham khảo ý kiến stylist chuyên nghiệp. Bạn có thể đặt lịch tư vấn miễn phí trên BarberGo để được hỗ trợ tốt nhất nhé!",
@@ -271,67 +284,72 @@ CÂU TRẢ LỜI:"""
             }
             return fallback_responses.get(question_type, fallback_responses['off_topic'])
     
+    # ==================== MAIN QUERY ====================
+    
     def query(
-    self,
-    question: str,
-    user_id: str,
-    session_id: str | None = None,
-    top_k: int = 3,
-    return_sources: bool = False
-):
-    # 1. Tạo session nếu chưa có
+        self,
+        question: str,
+        user_id: str,
+        session_id: Optional[str] = None,
+        top_k: int = 3,
+        return_sources: bool = False
+    ) -> Dict:
+        """Main query function"""
+        
+        # 1. Tạo session nếu chưa có
         if not session_id:
             session_id = self.create_chat_session(
                 user_id=user_id,
                 title=question[:50]
             )
-
-        # 2. Lưu message user
+        
+        # 2. Lưu user message
         self.save_chat_message(
             session_id=session_id,
             role="user",
             content=question
         )
-
+        
         # 3. RAG retrieve
         relevant_docs = self.search_similar_documents(question, top_k)
-
-        # 4. Generate answer
+        
+        # 4. Generate answer (hybrid strategy)
         answer = self.generate_answer(question, relevant_docs)
-
-        # 5. Confidence
+        
+        # 5. Calculate confidence
         if relevant_docs:
             similarity = relevant_docs[0]["similarity"]
             confidence = (
-                "high" if similarity > 0.6 else
+                "high" if similarity > 0.7 else
                 "medium" if similarity > 0.45 else
                 "low"
             )
         else:
             confidence = "low"
-
-        # 6. Lưu message assistant
+        
+        # 6. Lưu assistant message
         self.save_chat_message(
             session_id=session_id,
-            role="assistant",  # hoặc admin nếu chưa sửa DB
+            role="assistant",
             content=answer,
             confidence=confidence
         )
-
+        
         return {
             "session_id": session_id,
             "answer": answer,
             "confidence": confidence,
             "sources": relevant_docs if return_sources else None
         }
-
-    #dung de tao session chat moi
+    
+    # ==================== SESSION MANAGEMENT ====================
+    
     def create_chat_session(self, user_id: str, title: str) -> str:
+        """Tạo session"""
         result = self.supabase.table("chat_sessions").insert({
             "user_id": user_id,
             "title": title
         }).execute()
-
         return result.data[0]["id"]
     
     def save_chat_message(
@@ -339,236 +357,206 @@ CÂU TRẢ LỜI:"""
         session_id: str,
         role: str,
         content: str,
-        confidence: str | None = None
-        ):
+        confidence: Optional[str] = None
+    ):
+        """Lưu message"""
         self.supabase.table("chat_messages").insert({
-        "session_id": session_id,
-        "role": role,
-        "content": content,
-        "confidence": confidence
-    }).execute()
-
-    def get_chat_history(self, session_id: str):
+            "session_id": session_id,
+            "role": role,
+            "content": content,
+            "confidence": confidence
+        }).execute()
+    
+    def get_chat_history(self, session_id: str) -> List[Dict]:
+        """Lấy lịch sử chat"""
         result = self.supabase.table("chat_messages") \
             .select("id, role, content, confidence, created_at") \
             .eq("session_id", session_id) \
             .order("created_at", desc=False) \
             .execute()
-
         return result.data
-    def get_user_sessions(self, user_id: str):
+    
+    def get_user_sessions(self, user_id: str) -> List[Dict]:
+        """Lấy sessions của user"""
         result = self.supabase.table("chat_sessions") \
-            .select("id, title, created_at") \
+            .select("id, user_id, title, created_at") \
             .eq("user_id", user_id) \
             .order("created_at", desc=True) \
             .execute()
-
         return result.data
     
     def delete_session(self, session_id: str) -> bool:
-        """Xóa session và toàn bộ messages"""
+        """Xóa session"""
         try:
-            # 1. Xóa messages
-            self.supabase.table("chat_messages")\
-                .delete()\
-                .eq("session_id", session_id)\
+            self.supabase.table("chat_messages") \
+                .delete() \
+                .eq("session_id", session_id) \
                 .execute()
             
-            # 2. Xóa session
-            result = self.supabase.table("chat_sessions")\
-                .delete()\
-                .eq("id", session_id)\
+            result = self.supabase.table("chat_sessions") \
+                .delete() \
+                .eq("id", session_id) \
                 .execute()
             
             return bool(result.data)
         except Exception as e:
-            print(f"Lỗi xóa session: {e}")
+            print(f" Delete session error: {e}")
             return False
     
     def update_session_title(self, session_id: str, new_title: str) -> bool:
         """Đổi tên session"""
         try:
-            result = self.supabase.table("chat_sessions")\
-                .update({"title": new_title})\
-                .eq("id", session_id)\
+            result = self.supabase.table("chat_sessions") \
+                .update({"title": new_title}) \
+                .eq("id", session_id) \
                 .execute()
-            
             return bool(result.data)
         except Exception as e:
-            print(f"Lỗi cập nhật session: {e}")
+            print(f" Update session error: {e}")
             return False
     
-    def create_document(self, content: str, output: str, extra_metadata: dict | None = None) -> bool:
+    # ==================== DOCUMENT MANAGEMENT ====================
+    
+    def create_document(
+        self,
+        content: str,
+        output: str,
+        extra_metadata: Optional[dict] = None
+    ) -> bool:
+        """Tạo document"""
         try:
-            metadata = {
-                "input": content,  
-                "output": output
-            }
-            
+            metadata = {"input": content, "output": output}
             if extra_metadata:
                 metadata.update(extra_metadata)
             
-            metadata_json_string = json.dumps(metadata, ensure_ascii=False)
-            
             self.supabase.table("documents").insert({
                 "content": content,
-                "embedding": self.generate_embedding(content),
-                "metadata": metadata_json_string  # JSON STRING
+                "embedding": self.generate_embedding(content, use_ollama=True),
+                "metadata": json.dumps(metadata, ensure_ascii=False)
             }).execute()
             
             return True
         except Exception as e:
-            print(f" Lỗi tạo document: {e}")
+            print(f" Create document error: {e}")
             return False
-
+    
     def update_document(
-    self,
-    document_id: int,
-    new_content: str | None = None,
-    new_output: str | None = None,
-    new_metadata: dict | None = None
-) -> bool:
+        self,
+        document_id: int,
+        new_content: Optional[str] = None,
+        new_output: Optional[str] = None,
+        new_metadata: Optional[dict] = None
+    ) -> bool:
+        """Cập nhật document"""
         try:
             update_data = {}
-
-            # 1. Nếu content đổi → tạo embedding mới
+            
             if new_content:
                 update_data["content"] = new_content
-                update_data["embedding"] = self.generate_embedding(new_content)
-
-            # 2. Nếu output hoặc metadata đổi
+                update_data["embedding"] = self.generate_embedding(new_content, use_ollama=True)
+            
             if new_output or new_metadata:
-                # Lấy metadata cũ
                 old_doc = self.supabase.table("documents") \
                     .select("metadata") \
                     .eq("id", document_id) \
                     .single() \
                     .execute()
-
-                # Parse JSON string → dict
-                if isinstance(old_doc.data["metadata"], str):
-                    metadata = json.loads(old_doc.data["metadata"])
-                else:
-                    metadata = old_doc.data["metadata"]
-
+                
+                metadata = json.loads(old_doc.data["metadata"]) \
+                    if isinstance(old_doc.data["metadata"], str) \
+                    else old_doc.data["metadata"]
+                
                 if new_output:
                     metadata["output"] = new_output
-
                 if new_metadata:
                     metadata.update(new_metadata)
-
-                # Convert dict → JSON string
+                
                 update_data["metadata"] = json.dumps(metadata, ensure_ascii=False)
-
-            # 3. Update DB
+            
             result = self.supabase.table("documents") \
                 .update(update_data) \
                 .eq("id", document_id) \
                 .execute()
-
+            
             return bool(result.data)
-
         except Exception as e:
-            print(f"Lỗi cập nhật document: {e}")
+            print(f" Update document error: {e}")
             return False
+    
     def delete_document(self, document_id: int) -> bool:
+        """Xóa document"""
         try:
             result = self.supabase.table("documents") \
                 .delete() \
                 .eq("id", document_id) \
                 .execute()
-
             return bool(result.data)
         except Exception as e:
-            print(f"Lỗi xóa document: {e}")
+            print(f" Delete document error: {e}")
             return False
-    def get_all_documents(self, limit: int = 100, offset: int = 0):
-        """
-        Lấy danh sách tất cả documents (có phân trang)
-        """
+    
+    def get_all_documents(self, limit: int = 100, offset: int = 0) -> List[Dict]:
+        """Lấy tất cả documents"""
         try:
             result = self.supabase.table("documents") \
                 .select("id, content, metadata") \
                 .range(offset, offset + limit - 1) \
-                .order("id", desc=False) \
+                .order("id") \
                 .execute()
-
-            #  Parse metadata từ JSON string → dict
+            
             documents = []
             for doc in result.data:
                 parsed_doc = {
                     "id": doc["id"],
                     "content": doc["content"],
-                    "metadata": {}
+                    "metadata": json.loads(doc["metadata"]) \
+                        if isinstance(doc.get("metadata"), str) \
+                        else doc.get("metadata", {})
                 }
-                
-                # Parse metadata
-                if isinstance(doc.get("metadata"), str):
-                    try:
-                        parsed_doc["metadata"] = json.loads(doc["metadata"])
-                    except json.JSONDecodeError as e:
-                        print(f" Cannot parse metadata for doc {doc['id']}: {e}")
-                        parsed_doc["metadata"] = {"output": ""}
-                else:
-                    # Nếu đã là dict rồi (không chắc)
-                    parsed_doc["metadata"] = doc.get("metadata", {})
-                
                 documents.append(parsed_doc)
-
+            
             return documents
-
         except Exception as e:
-            print(f"Lỗi lấy danh sách documents: {e}")
+            print(f" Get documents error: {e}")
             return []
-    def get_document_by_id(self, document_id: int):
-        """
-        Lấy chi tiết 1 document theo ID
-        """
+    
+    def get_document_by_id(self, document_id: int) -> Optional[Dict]:
+        """Lấy document theo ID"""
         try:
             result = self.supabase.table("documents") \
                 .select("id, content, metadata") \
                 .eq("id", document_id) \
                 .single() \
                 .execute()
-
-            doc = result.data
             
-            #  Parse metadata
+            doc = result.data
             if isinstance(doc.get("metadata"), str):
-                try:
-                    doc["metadata"] = json.loads(doc["metadata"])
-                except:
-                    doc["metadata"] = {"output": ""}
+                doc["metadata"] = json.loads(doc["metadata"])
             
             return doc
-
         except Exception as e:
-            print(f" Lỗi lấy document {document_id}: {e}")
+            print(f" Get document error: {e}")
             return None
     
-    def search_documents_by_keyword(self, keyword: str):
+    def search_documents_by_keyword(self, keyword: str) -> List[Dict]:
+        """Search documents"""
         try:
             result = self.supabase.table("documents") \
                 .select("id, content, metadata") \
                 .ilike("content", f"%{keyword}%") \
                 .execute()
-
-            #  Parse metadata
+            
             documents = []
             for doc in result.data:
                 if isinstance(doc.get("metadata"), str):
-                    try:
-                        doc["metadata"] = json.loads(doc["metadata"])
-                    except:
-                        doc["metadata"] = {"output": ""}
-                
+                    doc["metadata"] = json.loads(doc["metadata"])
                 documents.append(doc)
-
-            return documents
             
+            return documents
         except Exception as e:
-            print(f" Lỗi search document: {e}")
+            print(f" Search documents error: {e}")
             return []
 
+
 # Singleton instance
-rag_service = RAGService()
+rag_service = HybridRAGService()

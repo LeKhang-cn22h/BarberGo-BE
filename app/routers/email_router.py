@@ -1,11 +1,17 @@
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Request
 from app.services.email_service import email_service
 from app.schemas.email_schema import EmailRequest, OwnerCredentialsEmailRequest
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(prefix="/api/email", tags=["Email"])
 
 @router.post("/send-simple")
+@limiter.limit("30/minute")
+
 async def send_simple_email(
+    request:Request,
     email_data: EmailRequest,
     background_tasks: BackgroundTasks
 ):
@@ -19,7 +25,9 @@ async def send_simple_email(
     return {"message": "Email is being sent in background"}
 
 @router.post("/send-owner-credentials")
+@limiter.limit("30/minute")
 async def send_owner_credentials(
+    request:Request,
     credentials_data: OwnerCredentialsEmailRequest,
     background_tasks: BackgroundTasks
 ):

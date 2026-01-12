@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends,Request
 from app.schemas.user_schema import (
     RegisterRequest,
     UserUpdate,
@@ -11,13 +11,16 @@ from app.schemas.user_schema import (
 )
 from app.services import user_service
 from app.dependencies.current_user import get_current_user
-
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+limiter = Limiter(key_func=get_remote_address)
 router = APIRouter(prefix="/users", tags=["Users"])
 
 # ==================== Auth Routes ====================
 
 @router.post("/register")
-def register(data: RegisterRequest):
+@limiter.limit("10/minute")
+def register(request:Request, data: RegisterRequest):
     """
     Đăng ký tài khoản mới
     - Supabase tự động gửi email xác nhận
@@ -25,7 +28,8 @@ def register(data: RegisterRequest):
     """
     return user_service.register_user(data)
 @router.post("/create-owner")
-def create_owner(data: CreateOwnerRequest):
+@limiter.limit("10/minute")
+def create_owner(request:Request, data: CreateOwnerRequest):
     """
     Tạo tài khoản owner (admin)
     - Email tự động confirmed
@@ -36,11 +40,13 @@ def create_owner(data: CreateOwnerRequest):
 
  # gui id kiem tra can dang ky hay dang nhap
 @router.post("/google")
-def login_or_logup_gg(data: GGLoginRequest):
+@limiter.limit("10/minute")
+def login_or_logup_gg(request:Request,data: GGLoginRequest):
     return user_service.gg_login_or_logup(data.id_token)
 
 @router.post("/resend-confirmation")
-def resend_confirmation(data: ResendConfirmationRequest):
+@limiter.limit("10/minute")
+def resend_confirmation(request:Request,data: ResendConfirmationRequest):
     """
     Gửi lại email xác nhận
     - Dùng khi user không nhận được email đăng ký
@@ -49,7 +55,8 @@ def resend_confirmation(data: ResendConfirmationRequest):
 
 
 @router.post("/login")
-def login(data: UserLogin):
+@limiter.limit("10/minute")
+def login(request:Request,data: UserLogin):
     """
     Đăng nhập
     - Yêu cầu email đã được xác nhận
@@ -58,7 +65,8 @@ def login(data: UserLogin):
 
 
 @router.post("/forgot-password")
-def forgot_password(data: ForgotPasswordRequest):
+@limiter.limit("10/minute")
+def forgot_password(request:Request, data: ForgotPasswordRequest):
     """
     Quên mật khẩu - gửi email reset
     """
@@ -66,7 +74,8 @@ def forgot_password(data: ForgotPasswordRequest):
 
 
 @router.post("/reset-password")
-def reset_password(data: ResetPasswordRequest):
+@limiter.limit("10/minute")
+def reset_password(request:Request,data: ResetPasswordRequest):
     """
     Đặt lại mật khẩu với token từ email
     """
@@ -76,25 +85,32 @@ def reset_password(data: ResetPasswordRequest):
 # ==================== User CRUD ====================
 
 @router.get("/")
-def list_users():
+@limiter.limit("120/minute")
+def list_users(request:Request):
     """Lấy danh sách tất cả users"""
     return user_service.get_all_users()
 
 
 @router.get("/{user_id}")
-def get_user(user_id: str):
+@limiter.limit("120/minute")
+
+def get_user(request:Request,user_id: str):
     """Lấy thông tin user theo ID"""
     return user_service.get_user_by_id(user_id)
 
 
 @router.put("/{user_id}", dependencies=[Depends(get_current_user)])
-def update_user(user_id: str, data: UserUpdate):
+@limiter.limit("30/minute")
+def update_user(request:Request,user_id: str, data: UserUpdate):
     """Cập nhật thông tin user"""
     return user_service.update_user(user_id, data)
 
 
 @router.delete("/{user_id}", dependencies=[Depends(get_current_user)])
-def delete_user(user_id: str):
+@limiter.limit("10/minute")
+
+def delete_user(request:Request,user_id: str):
+    
     """Xóa user"""
     return user_service.delete_user(user_id)
 

@@ -1,401 +1,283 @@
-# app/routers/rag_router.py
-
-from fastapi import APIRouter, HTTPException, Path, Query
+# Hybrid Chat Router
+from fastapi import APIRouter, HTTPException, Query, Path, Request
+from typing import List
+from datetime import datetime
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from app.services.rag_service import rag_service
 from app.schemas.rag_schema import (
-    ChatRequest, ChatResponse,
-    ChatHistoryResponse, ChatMessage,
-    ChatSessionsResponse, ChatSession,
-    CreateSessionRequest, UpdateSessionRequest
+    ChatRequest,
+    ChatResponse,
+    Source,
+    ChatMessage,
+    ChatHistoryResponse,
+    ChatSession,
+    ChatSessionsResponse,
+    CreateSessionRequest,
+    UpdateSessionRequest,
 )
-import traceback
+limiter = Limiter(key_func=get_remote_address)
 
-router = APIRouter(prefix="/api/chatbot", tags=["Chatbot RAG"])
+router = APIRouter(prefix="/api/chatbot", tags=["Hybrid RAG Chatbot"])
 
-# ====================================
-# 1. CHAT ENDPOINT 
-# ====================================
 
+# ==================== HEALTH CHECK ====================
+
+@router.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    ollama_healthy = True  # ollama_client.health_check()
+    
+    return {
+        "status": "healthy",
+        "strategy": "hybrid",
+        "ollama": {
+            "chat_model": rag_service.ollama_chat_model,
+            "embed_model": rag_service.ollama_embed_model,
+            "healthy": ollama_healthy
+        },
+        "gemini": {
+            "model": "gemini-2.0-flash-exp"
+        },
+        "threshold": rag_service.similarity_threshold,
+        "timestamp": datetime.now()
+    }
+
+
+# ==================== CHAT ====================
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat_with_rag(request: ChatRequest):
+@limiter.limit("10/minute")
+async def chat(request: Request ,body: ChatRequest):
     """
-     Chat với BarberGo AI Assistant
+    Chat với Hybrid AI (Ollama + Gemini)
     
-    **Tự động quản lý session:**
-    - Nếu `session_id` = null → Tạo session mới
-    - Nếu có `session_id` → Tiếp tục chat trong session đó
+    **Strategy:**
+    - similarity >= 0.75: Dùng Ollama (local, fast)
+    - similarity < 0.75: Dùng Gemini (cloud, powerful)
     
     **Parameters:**
-    - **user_id**: ID của user (bắt buộc)
-    - **question**: Câu hỏi của bạn (bắt buộc)
-    - **session_id**: ID session hiện tại (tùy chọn)
-    - **top_k**: Số documents tham khảo (mặc định: 3)
-    - **return_sources**: Hiển thị nguồn tham khảo (mặc định: false)
-    
-    **Returns:**
-    - **session_id**: ID của session (mới hoặc hiện tại)
-    - **answer**: Câu trả lời
-    - **confidence**: Độ tin cậy (high/medium/low)
-    - **sources**: Nguồn tham khảo (nếu return_sources=true)
+    - **question**: Câu hỏi
+    - **user_id**: ID user
+    - **session_id**: Optional (tự tạo nếu None)
+    - **top_k**: Số documents (1-10)
+    - **return_sources**: Trả về sources?
     """
     try:
-        # Validate input
-        if not request.question or len(request.question.strip()) == 0:
-            raise HTTPException(
-                status_code=400,
-                detail="Câu hỏi không được để trống"
-            )
+        # Validate
+        if not body.question or len(body.question.strip()) == 0:
+            raise HTTPException(400, detail="Câu hỏi không được để trống")
         
-        if not request.user_id:
-            raise HTTPException(
-                status_code=400,
-                detail="user_id là bắt buộc"
-            )
+        if not body.user_id:
+            raise HTTPException(400, detail="user_id là bắt buộc")
         
-        # Gọi RAG service (đã có logic tạo session tự động)
-        result = rag_service.query(
-            question=request.question,
-            user_id=request.user_id,
-            session_id=request.session_id,
-            top_k=request.top_k,
-            return_sources=request.return_sources
+        # Query hybrid service
+        response = rag_service.query(
+            question=body.question,
+            user_id=body.user_id,
+            session_id=body.session_id,
+            top_k=body.top_k or 3,
+            return_sources=body.return_sources or False
         )
         
-        return result
+        # Convert sources to Source model
+        if response.get('sources'):
+            response['sources'] = [
+                Source(
+                    id=doc.get('id', 0),
+                    content=doc.get('content', ''),
+                    similarity=doc.get('similarity', 0),
+                    metadata=doc.get('metadata', {})
+                )
+                for doc in response['sources']
+            ]
         
+        return response
+    
+    except HTTPException:
+        raise
     except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(
-            status_code=500,
-            detail=f"Lỗi khi xử lý câu hỏi: {str(e)}"
-        )
+        raise HTTPException(500, detail=f"Chat error: {str(e)}")
 
-# ====================================
-# 2. QUẢN LÝ SESSIONS
-# ====================================
+
+# ==================== SESSIONS ====================
 
 @router.post("/sessions", status_code=201)
-async def create_session(request: CreateSessionRequest):
-    """
-     Tạo session chat mới
-    
-    **Parameters:**
-    - **user_id**: ID của user
-    - **title**: Tiêu đề session (VD: "Hỏi về đặt lịch")
-    
-    **Returns:**
-    - **session_id**: ID của session vừa tạo
-    """
+@limiter.limit("30/minute")
+async def create_session(request : Request, body: CreateSessionRequest):
+    """Tạo session chat mới"""
     try:
         session_id = rag_service.create_chat_session(
-            user_id=request.user_id,
-            title=request.title
+            user_id=body.user_id,
+            title=body.title
         )
         
         return {
             "session_id": session_id,
             "message": "Tạo session thành công"
         }
-        
     except Exception as e:
-        
-        raise HTTPException(
-            status_code=500,
-            detail=f"Lỗi khi tạo session: {str(e)}"
-        )
+        raise HTTPException(500, detail=str(e))
+
 
 @router.get("/sessions/{user_id}", response_model=ChatSessionsResponse)
-async def get_user_sessions(
-    user_id: str = Path(..., description="ID của user"),
-    limit: int = Query(20, ge=1, le=100, description="Số lượng sessions")
+@limiter.limit("120/minute")
+async def get_sessions(
+    request:Request,
+    user_id: str = Path(...),
+    limit: int = Query(20, ge=1, le=100)
 ):
-    """
-     Lấy danh sách tất cả chat sessions của user
-    
-    **Parameters:**
-    - **user_id**: ID của user
-    - **limit**: Số lượng sessions tối đa (mặc định: 20)
-    
-    **Returns:**
-    - Danh sách sessions (sắp xếp theo thời gian tạo mới nhất)
-    """
+    """Lấy danh sách sessions của user"""
     try:
         sessions = rag_service.get_user_sessions(user_id)
-        
-        # Giới hạn số lượng
         sessions = sessions[:limit]
         
         return {
-            "sessions": [
-                ChatSession(
-                    id=s["id"],
-                    user_id=s.get("user_id", user_id),
-                    title=s["title"],
-                    created_at=s["created_at"]
-                )
-                for s in sessions
-            ]
+            "sessions": [ChatSession(**s) for s in sessions],
+            "total": len(sessions)
         }
-        
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Lỗi khi lấy danh sách sessions: {str(e)}"
-        )
+        raise HTTPException(500, detail=str(e))
+
 
 @router.get("/sessions/{session_id}/messages", response_model=ChatHistoryResponse)
-async def get_chat_history(
-    session_id: str = Path(..., description="ID của session")
-):
-    """
-     Lấy lịch sử chat trong một session
-    
-    **Parameters:**
-    - **session_id**: ID của session
-    
-    **Returns:**
-    - Toàn bộ lịch sử chat (user + assistant)
-    """
+@limiter.limit("120/minute")
+async def get_history(request:Request, session_id: str = Path(...)):
+    """Lấy lịch sử chat"""
     try:
         messages = rag_service.get_chat_history(session_id)
         
-        if not messages:
-            return {
-                "session_id": session_id,
-                "messages": []
-            }
-        
         return {
             "session_id": session_id,
-            "messages": [
-                ChatMessage(
-                    id=msg["id"],
-                    role=msg["role"],
-                    content=msg["content"],
-                    confidence=msg.get("confidence"),
-                    created_at=msg["created_at"]
-                )
-                for msg in messages
-            ]
+            "messages": [ChatMessage(**m) for m in messages],
+            "total": len(messages)
         }
-        
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Lỗi khi lấy lịch sử chat: {str(e)}"
-        )
+        raise HTTPException(500, detail=str(e))
+
 
 @router.put("/sessions/{session_id}")
-async def update_session_title(
-    session_id: str = Path(..., description="ID của session"),
-    request: UpdateSessionRequest = ...
+@limiter.limit("30/minute")
+async def update_title(
+    request:Request,
+    session_id: str = Path(...),
+    body: UpdateSessionRequest = ...
 ):
-    """
-     Đổi tên session
-    
-    **Parameters:**
-    - **session_id**: ID của session
-    - **title**: Tiêu đề mới
-    """
+    """Đổi tên session"""
     try:
-        result = rag_service.supabase.table("chat_sessions")\
-            .update({"title": request.title})\
-            .eq("id", session_id)\
-            .execute()
+        success = rag_service.update_session_title(session_id, body.title)
         
-        if not result.data:
-            raise HTTPException(
-                status_code=404,
-                detail="Không tìm thấy session"
-            )
+        if not success:
+            raise HTTPException(404, detail="Session not found")
         
-        return {
-            "message": "Cập nhật tên session thành công",
+        return {    
+            "message": "Cập nhật thành công",
             "session_id": session_id,
-            "new_title": request.title
+            "new_title": body.title
         }
-        
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Lỗi khi cập nhật session: {str(e)}"
-        )
+        raise HTTPException(500, detail=str(e))
+
 
 @router.delete("/sessions/{session_id}")
-async def delete_session(
-    session_id: str = Path(..., description="ID của session")
-):
-    """
-     Xóa session và toàn bộ messages
-    
-    **Parameters:**
-    - **session_id**: ID của session cần xóa
-    
-    **Note:** Sẽ xóa cascade toàn bộ messages trong session
-    """
+@limiter.limit("30/minute")
+async def delete_session(request : Request,session_id: str = Path(...)):
+    """Xóa session"""
     try:
-        # 1. Xóa messages trước (vì có foreign key)
-        rag_service.supabase.table("chat_messages")\
-            .delete()\
-            .eq("session_id", session_id)\
-            .execute()
+        success = rag_service.delete_session(session_id)
         
-        # 2. Xóa session
-        result = rag_service.supabase.table("chat_sessions")\
-            .delete()\
-            .eq("id", session_id)\
-            .execute()
-        
-        if not result.data:
-            raise HTTPException(
-                status_code=404,
-                detail="Không tìm thấy session"
-            )
+        if not success:
+            raise HTTPException(404, detail="Session not found")
         
         return {
             "message": "Xóa session thành công",
             "session_id": session_id
         }
-        
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Lỗi khi xóa session: {str(e)}"
-        )
+        raise HTTPException(500, detail=str(e))
 
-# ====================================
-# 3. QUẢN LÝ DOCUMENTS (Knowledge Base)
-# ====================================
+
+# ==================== DOCUMENTS ====================
 
 @router.post("/documents", status_code=201)
-async def create_document(request: dict):
-    """
-     Tạo document mới trong Knowledge Base
-    
-    **Parameters:**
-    - **content**: Nội dung chính của document (VD: "Cách đặt lịch trên app")
-    - **output**: Câu trả lời hoặc thông tin liên quan (VD: "Bước 1: Mở app... Bước 2:...")
-    - **extra_metadata** (optional): Metadata bổ sung (VD: {"category": "FAQ", "priority": 1})
-    
-    **Returns:**
-    - Thông báo tạo thành công và document ID
-    """
+@limiter.limit("10/minute")
+async def create_document(request:Request, body: dict):
+    """Tạo document mới"""
     try:
-        # Validate
-        if not request.get("content") or not request.get("output"):
-            raise HTTPException(
-                status_code=400,
-                detail="content và output là bắt buộc"
-            )
+        if not body.get("content") or not body.get("output"):
+            raise HTTPException(400, detail="content và output là bắt buộc")
         
-        result = rag_service.create_document(
-            content=request["content"],
-            output=request["output"],
-            extra_metadata=request.get("extra_metadata")
+        success = rag_service.create_document(
+            content=body["content"],
+            output=body["output"],
+            extra_metadata=body.get("extra_metadata")
         )
         
-        if not result:
-            raise HTTPException(
-                status_code=500,
-                detail="Không thể tạo document"
-            )
+        if not success:
+            raise HTTPException(500, detail="Không thể tạo document")
         
         return {
             "message": "Tạo document thành công",
-            "status": "success"
+            "content": body["content"][:50] + "..."
         }
-        
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Lỗi khi tạo document: {str(e)}"
-        )
+        raise HTTPException(500, detail=str(e))
+
+
 @router.get("/documents")
-async def list_documents(
-    limit: int = Query(50, ge=1, le=200, description="Số lượng documents"),
-    offset: int = Query(0, ge=0, description="Vị trí bắt đầu")
+@limiter.limit("120/minute")
+async def get_documents(
+    request:Request,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0)
 ):
-    """
-    📄 Lấy danh sách tất cả documents (có phân trang)
-    """
+    """Lấy danh sách documents"""
     try:
-        # ✅ Lấy total count
+        documents = rag_service.get_all_documents(limit, offset)
+        
+        # Get total count
         count_result = rag_service.supabase.table("documents") \
             .select("*", count="exact") \
             .execute()
         
-        total_count = count_result.count
-        
-        documents = rag_service.get_all_documents(limit=limit, offset=offset)
-        
         return {
-            "total": total_count,
+            "total": count_result.count,
             "limit": limit,
             "offset": offset,
-            "has_more": (offset + limit) < total_count,
+            "has_more": (offset + limit) < count_result.count,
             "documents": documents
         }
-        
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Lỗi khi lấy danh sách documents: {str(e)}"
-        )
+        raise HTTPException(500, detail=str(e))
+
 
 @router.get("/documents/{document_id}")
-async def get_document_detail(
-    document_id: int = Path(..., ge=1, description="ID của document")
-):
-    """
-     Lấy chi tiết một document theo ID
-    
-    **Parameters:**
-    - **document_id**: ID của document
-    
-    **Returns:**
-    - Chi tiết document (id, content, metadata)
-    """
+@limiter.limit("120/minute")
+async def get_document(request:Request,document_id: int = Path(..., ge=1)):
+    """Lấy chi tiết document"""
     try:
         document = rag_service.get_document_by_id(document_id)
         
         if not document:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Không tìm thấy document với ID {document_id}"
-            )
+            raise HTTPException(404, detail="Document not found")
         
-        return {
-            "document": document
-        }
-        
+        return {"document": document}
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Lỗi khi lấy document: {str(e)}"
-        )
+        raise HTTPException(500, detail=str(e))
 
-@router.get("/documents/search/keyword")
-async def search_documents(
-    keyword: str = Query(..., min_length=1, description="Từ khóa tìm kiếm")
-):
-    """
-     Tìm kiếm documents theo từ khóa
-    
-    **Parameters:**
-    - **keyword**: Từ khóa cần tìm (sẽ tìm trong content)
-    
-    **Returns:**
-    - Danh sách documents chứa từ khóa
-    """
+
+@router.get("/documents/search/{keyword}")
+@limiter.limit("120/minute")
+async def search_documents(request:Request, keyword: str = Path(..., min_length=1)):
+    """Tìm kiếm documents"""
     try:
         documents = rag_service.search_documents_by_keyword(keyword)
         
@@ -404,161 +286,54 @@ async def search_documents(
             "total": len(documents),
             "documents": documents
         }
-        
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Lỗi khi tìm kiếm documents: {str(e)}"
-        )
+        raise HTTPException(500, detail=str(e))
+
 
 @router.put("/documents/{document_id}")
+@limiter.limit("120/minute")
 async def update_document(
-    document_id: int = Path(..., ge=1, description="ID của document"),
-    request: dict = ...
+    request:Request,
+    document_id: int = Path(..., ge=1),
+    body: dict = ...
 ):
-    """
-     Cập nhật document
-    
-    **Parameters:**
-    - **document_id**: ID của document
-    - **new_content** (optional): Nội dung mới
-    - **new_output** (optional): Câu trả lời/thông tin mới
-    - **new_metadata** (optional): Metadata mới (sẽ merge với metadata cũ)
-    
-    **Note:**
-    - Nếu `new_content` thay đổi → embedding sẽ được tạo lại tự động
-    - Metadata mới sẽ merge với metadata cũ (không ghi đè hoàn toàn)
-    """
+    """Cập nhật document"""
     try:
-        result = rag_service.update_document(
+        success = rag_service.update_document(
             document_id=document_id,
-            new_content=request.get("new_content"),
-            new_output=request.get("new_output"),
-            new_metadata=request.get("new_metadata")
+            new_content=body.get("new_content"),
+            new_output=body.get("new_output"),
+            new_metadata=body.get("new_metadata")
         )
         
-        if not result:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Không tìm thấy document với ID {document_id}"
-            )
+        if not success:
+            raise HTTPException(404, detail="Document not found")
         
         return {
-            "message": "Cập nhật document thành công",
+            "message": "Cập nhật thành công",
             "document_id": document_id
         }
-        
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Lỗi khi cập nhật document: {str(e)}"
-        )
+        raise HTTPException(500, detail=str(e))
+
 
 @router.delete("/documents/{document_id}")
-async def delete_document(
-    document_id: int = Path(..., ge=1, description="ID của document")
-):
-    """
-     Xóa document
-    
-    **Parameters:**
-    - **document_id**: ID của document cần xóa
-    
-    **Note:** Xóa document sẽ làm mất embedding và metadata liên quan
-    """
+@limiter.limit("30/minute")
+async def delete_document(request:Request,document_id: int = Path(..., ge=1)):
+    """Xóa document"""
     try:
-        result = rag_service.delete_document(document_id)
+        success = rag_service.delete_document(document_id)
         
-        if not result:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Không tìm thấy document với ID {document_id}"
-            )
+        if not success:
+            raise HTTPException(404, detail="Document not found")
         
         return {
-            "message": "Xóa document thành công",
+            "message": "Xóa thành công",
             "document_id": document_id
         }
-        
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Lỗi khi xóa document: {str(e)}"
-        )
-
-# ====================================
-# 4. HEALTH CHECK & TEST
-# ====================================
-
-@router.get("/health")
-async def health_check():
-    """ Health check endpoint"""
-    return {
-        "status": "healthy",
-        "service": "BarberGo RAG Chatbot",
-        "model": "Gemini 2.5 Flash + Supabase Vector DB",
-        "features": [
-            "Multi-session chat",
-            "Chat history",
-            "RAG with embeddings",
-            "Smart fallback answers"
-        ]
-    }
-
-@router.get("/test")
-async def test_chatbot():
-    """
-     Test endpoint với câu hỏi mẫu
-    
-    **Note:** Chỉ dùng để test, không lưu vào database
-    """
-    test_questions = [
-        "Làm thế nào để đặt lịch?",
-        "Tôi muốn hủy lịch thì làm sao?",
-        "Đặt lịch trên app có mất phí không?"
-    ]
-    
-    results = []
-    for q in test_questions:
-        # Test RAG retrieval only (không lưu DB)
-        docs = rag_service.search_similar_documents(q, top_k=2)
-        answer = rag_service.generate_answer(q, docs)
-        
-        results.append({
-            "question": q,
-            "answer": answer,
-            "found_docs": len(docs),
-            "similarity": docs[0]["similarity"] if docs else 0
-        })
-    
-    return {
-        "message": "Test chatbot with sample questions",
-        "results": results
-    }
-
-@router.get("/all_documents")
-async def get_all_documents():
-    """
-     Lấy tất cả documents trong vector DB
-    
-    **Note:** Chỉ dùng để kiểm tra dữ liệu
-    """
-    try:
-        documents = rag_service.supabase.table("documents")\
-            .select("*")\
-            .execute()
-        
-        return {
-            "total_documents": len(documents.data),
-            "documents": documents.data
-        }
-        
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Lỗi khi lấy documents: {str(e)}"
-        )
+        raise HTTPException(500, detail=str(e))

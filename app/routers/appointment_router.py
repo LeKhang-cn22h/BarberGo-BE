@@ -1,15 +1,19 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query,Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from app.schemas.appointment_schema import AppointmentCreate, AppointmentUpdate
 from app.services import appointment_service
 from app.dependencies.current_user import get_current_user
 from typing import Optional
 
+limiter = Limiter(key_func=get_remote_address)
+
 router = APIRouter(prefix="/appointments", tags=["Appointments"])
 
 # ==================== Create ====================
-
 @router.post("/", dependencies=[Depends(get_current_user)])
-def create_appointment(data: AppointmentCreate):
+@limiter.limit("1/minute")
+def create_appointment(request:Request,data: AppointmentCreate):
     """
     Tạo appointment mới (yêu cầu tư vấn)
     - User gửi thông tin để được tư vấn về barber
@@ -21,7 +25,8 @@ def create_appointment(data: AppointmentCreate):
 # ==================== Read ====================
 
 @router.get("/", dependencies=[Depends(get_current_user)])
-def get_all_appointments():
+@limiter.limit("120/minute")
+def get_all_appointments(request:Request):
     """
     Lấy tất cả appointments
     - Chỉ admin mới nên truy cập
@@ -31,7 +36,8 @@ def get_all_appointments():
 
 
 @router.get("/pending", dependencies=[Depends(get_current_user)])
-def get_pending_appointments():
+@limiter.limit("120/minute")
+def get_pending_appointments(request:Request):
     """
     Lấy các appointments đang chờ xử lý
     - Cho admin kiểm tra và xử lý
@@ -41,7 +47,8 @@ def get_pending_appointments():
 
 
 @router.get("/{appointment_id}", dependencies=[Depends(get_current_user)])
-def get_appointment(appointment_id: str):
+@limiter.limit("120/minute")
+def get_appointment(request:Request,appointment_id: str):
     """
     Lấy thông tin chi tiết 1 appointment
     - Yêu cầu đăng nhập
@@ -50,7 +57,8 @@ def get_appointment(appointment_id: str):
 
 
 @router.get("/user/{user_id}", dependencies=[Depends(get_current_user)])
-def get_user_appointments(user_id: str):
+@limiter.limit("120/minute")
+def get_user_appointments(request:Request,user_id: str):
     """
     Lấy appointments của 1 user
     - Yêu cầu đăng nhập
@@ -59,7 +67,8 @@ def get_user_appointments(user_id: str):
 
 
 @router.get("/status/{status}", dependencies=[Depends(get_current_user)])
-def get_appointments_by_status(status: str):
+@limiter.limit("120/minute")
+def get_appointments_by_status(request:Request, status: str):
     """
     Lấy appointments theo status
     - status: pending, confirmed, completed, cancelled
@@ -71,7 +80,9 @@ def get_appointments_by_status(status: str):
 # ==================== Update ====================
 
 @router.put("/{appointment_id}", dependencies=[Depends(get_current_user)])
+@limiter.limit("30/minute")
 def update_appointment(
+    request:Request,
     appointment_id: str, 
     data: AppointmentUpdate,
     current_user = Depends(get_current_user)
@@ -86,7 +97,9 @@ def update_appointment(
 
 
 @router.patch("/{appointment_id}/status", dependencies=[Depends(get_current_user)])
+@limiter.limit("30/minute")
 def update_appointment_status(
+    request:Request,
     appointment_id: str,
     status: str = Query(..., description="pending, confirmed, completed, cancelled"),
     current_user = Depends(get_current_user)
@@ -100,7 +113,9 @@ def update_appointment_status(
 
 
 @router.patch("/{appointment_id}/confirm", dependencies=[Depends(get_current_user)])
+@limiter.limit("30/minute")
 def confirm_appointment(
+    request:Request,
     appointment_id: str,
     admin_note: Optional[str] = Query(None, description="Ghi chú của admin"),
     current_user = Depends(get_current_user)
@@ -115,7 +130,9 @@ def confirm_appointment(
 
 
 @router.patch("/{appointment_id}/cancel", dependencies=[Depends(get_current_user)])
+@limiter.limit("30/minute")
 def cancel_appointment(
+    request:Request,
     appointment_id: str,
     admin_note: Optional[str] = Query(None, description="Lý do hủy")
 ):
@@ -130,7 +147,8 @@ def cancel_appointment(
 # ==================== Delete ====================
 
 @router.delete("/{appointment_id}", dependencies=[Depends(get_current_user)])
-def delete_appointment(appointment_id: str):
+@limiter.limit("30/minute")
+def delete_appointment(request:Request,appointment_id: str):
     """
     Xóa appointment (soft delete)
     - Thực chất là set status = cancelled

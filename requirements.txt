@@ -71,3 +71,8 @@ tqdm==4.66.1
 # Optional - Speed up
 xformers==0.0.23  # Memory efficient attention
 fastapi-mail --break-system-packages
+ollama
+ollama pull qwen2.5:7b
+ollama pull nomic-embed-text
+requests
+slowapi

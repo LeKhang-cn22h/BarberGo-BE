@@ -22,7 +22,7 @@ class ChatResponse(BaseModel):
 
 class ChatMessage(BaseModel):
     id: str
-    role: str  # 'user' | 'assistant' | 'system'
+    role: str   
     content: str
     confidence: Optional[str] = None
     created_at: datetime

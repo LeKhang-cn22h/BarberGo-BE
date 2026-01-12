@@ -369,6 +369,19 @@ def soft_delete_barber(barber_id: UUID) -> BarberResponse:
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error soft deleting barber: {str(e)}")
 
+def active_barber(barber_id: UUID) -> BarberResponse:
+    """tái kích hoạt barber"""
+    try:
+        response = supabase.table("barbers").update({"status":True }).eq("id", str(barber_id)).execute()
+        
+        if not response.data:
+            raise HTTPException(status_code=404, detail="Barber not found")
+        
+        return BarberResponse(**response.data[0])
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error soft deleting barber: {str(e)}")
 
 def delete_barber(barber_id: UUID) -> dict:
     """Xóa barber vĩnh viễn và ảnh của barber"""

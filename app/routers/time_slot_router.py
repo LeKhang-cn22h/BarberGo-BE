@@ -1,15 +1,18 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query,Request
 from app.schemas.time_slot_schema import TimeSlotCreate, TimeSlotUpdate, TimeSlotBulkCreate
 from app.services import time_slot_service
 from app.dependencies.current_user import get_current_user
 from typing import Optional
-
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+limiter = Limiter(key_func=get_remote_address)
 router = APIRouter(prefix="/time-slots", tags=["Time Slots"])
 
 # ==================== Create ====================
 
 @router.post("/", dependencies=[Depends(get_current_user)])
-def create_time_slot(data: TimeSlotCreate):
+@limiter.limit("10/minute")
+def create_time_slot(request:Request,data: TimeSlotCreate):
     """
     Tạo time slot mới
     - Kiểm tra barber, working days, opening hours
@@ -19,7 +22,9 @@ def create_time_slot(data: TimeSlotCreate):
 
 
 @router.post("/bulk", dependencies=[Depends(get_current_user)])
-def create_time_slots_bulk(data: TimeSlotBulkCreate):
+@limiter.limit("10/minute")
+
+def create_time_slots_bulk(request:Request,data: TimeSlotBulkCreate):
     """
     Tạo nhiều time slots cùng lúc cho 1 ngày
     - Yêu cầu đăng nhập
@@ -30,7 +35,8 @@ def create_time_slots_bulk(data: TimeSlotBulkCreate):
 # ==================== Read ====================
 
 @router.get("/")
-def get_all_time_slots():
+@limiter.limit("120/minute")
+def get_all_time_slots(request:Request):
     """
     Lấy tất cả time slots
     """
@@ -38,7 +44,8 @@ def get_all_time_slots():
 
 
 @router.get("/{time_slot_id}")
-def get_time_slot(time_slot_id: int):
+@limiter.limit("120/minute")
+def get_time_slot(request:Request,time_slot_id: int):
     """
     Lấy thông tin chi tiết 1 time slot
     """
@@ -46,7 +53,9 @@ def get_time_slot(time_slot_id: int):
 
 
 @router.get("/barber/{barber_id}")
+@limiter.limit("120/minute")
 def get_barber_time_slots(
+    request:Request,
     barber_id: str,
     slot_date: Optional[str] = Query(None, description="Format: YYYY-MM-DD"),
     is_available: Optional[bool] = Query(None, description="Filter by availability")
@@ -59,7 +68,9 @@ def get_barber_time_slots(
 
 
 @router.get("/available/list")
+@limiter.limit("120/minute")
 def get_available_time_slots(
+    request:Request,
     barber_id: Optional[str] = Query(None),
     slot_date: Optional[str] = Query(None, description="Format: YYYY-MM-DD")
 ):
@@ -73,7 +84,8 @@ def get_available_time_slots(
 # ==================== Update ====================
 
 @router.put("/{time_slot_id}", dependencies=[Depends(get_current_user)])
-def update_time_slot(time_slot_id: int, data: TimeSlotUpdate):
+@limiter.limit("30/minute")
+def update_time_slot(request:Request,time_slot_id: int, data: TimeSlotUpdate):
     """
     Cập nhật thông tin time slot
     - Không cho phép sửa nếu đang có booking
@@ -83,7 +95,8 @@ def update_time_slot(time_slot_id: int, data: TimeSlotUpdate):
 
 
 @router.patch("/{time_slot_id}/toggle", dependencies=[Depends(get_current_user)])
-def toggle_time_slot_availability(time_slot_id: int):
+@limiter.limit("30/minute")
+def toggle_time_slot_availability(request:Request,time_slot_id: int):
     """
     Chuyển đổi trạng thái available/unavailable
     - Yêu cầu đăng nhập
@@ -94,7 +107,8 @@ def toggle_time_slot_availability(time_slot_id: int):
 # ==================== Delete ====================
 
 @router.delete("/{time_slot_id}", dependencies=[Depends(get_current_user)])
-def delete_time_slot(time_slot_id: int):
+@limiter.limit("30/minute")
+def delete_time_slot(request:Request,time_slot_id: int):
     """
     Xóa time slot
     - Chỉ xóa được nếu chưa có booking
