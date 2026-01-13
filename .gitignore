@@ -10,6 +10,10 @@ env/
 ENV/
 app/.env
 app/*.env
+dataset-1/
+dataset/
+datasets/
+app/train_acne/dataset-1/
 
 pip-wheel-metadata/
 *.egg-info/

@@ -1,9 +1,9 @@
 from typing import List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 
 class ChatRequest(BaseModel):
-    question: str
+    question: str = Field(..., min_length=1, max_length=4000, description="Câu hỏi của người dùng, tối đa 4000 ký tự")
     user_id: str  
     session_id: Optional[str] = None  
     top_k: Optional[int] = 3

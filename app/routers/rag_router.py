@@ -55,13 +55,6 @@ async def chat(request: Request ,body: ChatRequest):
     **Strategy:**
     - similarity >= 0.75: Dùng Ollama (local, fast)
     - similarity < 0.75: Dùng Gemini (cloud, powerful)
-    
-    **Parameters:**
-    - **question**: Câu hỏi
-    - **user_id**: ID user
-    - **session_id**: Optional (tự tạo nếu None)
-    - **top_k**: Số documents (1-10)
-    - **return_sources**: Trả về sources?
     """
     try:
         # Validate

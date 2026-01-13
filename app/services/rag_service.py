@@ -11,6 +11,7 @@ from typing import List, Dict, Optional
 from dotenv import load_dotenv
 import json
 import time
+from collections import deque
 
 # Import Ollama Client (requests-based)
 from app.services.ollama_client import ollama_client
@@ -28,7 +29,6 @@ class HybridRAGService:
         
         # Gemini config
         genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-        self.gemini_embed_model = "models/text-embedding-004"
         self.gemini_gen_model = genai.GenerativeModel("models/gemini-2.0-flash-exp")
         
         # Supabase
@@ -39,12 +39,34 @@ class HybridRAGService:
         
         # Threshold để quyết định dùng model nào
         self.similarity_threshold = 0.75
+
+        # Google cho free tier khoảng 15 request/phút (RPM)
+        self.gemini_rpm_limit = 5
+
+        self.gemini_usage_window = deque()
+        print(f"   Gemini Limit: {self.gemini_rpm_limit} RPM (Requests Per Minute)")
         
         print(" Hybrid RAG Service initialized")
         print(f"   Ollama: {self.ollama_chat_model} + {self.ollama_embed_model}")
         print(f"   Gemini: gemini-2.0-flash-exp")
         print(f"   Threshold: {self.similarity_threshold}")
     
+    def _check_gemini_availability(self) -> bool:
+        """
+        Kiểm tra xem có được phép gọi Gemini không.
+        Thuật toán: Sliding Window Log.
+        """
+        now = time.time()
+        
+        # 1. Loại bỏ các request đã quá 60 giây khỏi hàng đợi
+        while self.gemini_usage_window and now - self.gemini_usage_window[0] > 60:
+            self.gemini_usage_window.popleft()
+            
+        # 2. Kiểm tra số lượng request còn lại trong cửa sổ 1 phút
+        if len(self.gemini_usage_window) < self.gemini_rpm_limit:
+            return True # Còn lượt
+        
+        return False # Hết lượt
     # ==================== EMBEDDING ====================
     
     def generate_embedding(self, text: str, use_ollama: bool = True) -> List[float]:
@@ -57,6 +79,7 @@ class HybridRAGService:
         """
         try:
             if use_ollama:
+                print("đang chạy ollama")
                 # Ollama embedding (local, fast)
                 result = ollama_client.embeddings(
                     model=self.ollama_embed_model,
@@ -65,6 +88,7 @@ class HybridRAGService:
                 return result['embedding']
             else:
                 # Gemini embedding (cloud)
+                print("đang chạy gemini")
                 result = genai.embed_content(
                     model=self.gemini_embed_model,
                     content=text,
@@ -202,10 +226,23 @@ HƯỚNG DẪN:
 CÂU TRẢ LỜI:"""
         
         try:
+            use_gemini=False
+
             #  STRATEGY: Similarity >= 0.75 → Ollama, < 0.75 → Gemini
-            if top_similarity >= self.similarity_threshold:
-                # High confidence → Dùng Ollama (fast, local)
-                print(f" Using Ollama (similarity: {top_similarity:.2f})")
+            
+            # Logic ban đầu: Similarity thấp thì muốn dùng Gemini
+            if top_similarity < self.similarity_threshold:
+                # KIỂM TRA LIMIT TRƯỚC KHI GỌI
+                if self._check_gemini_availability():
+                    use_gemini = True
+                else:
+                    print(f" Gemini Rate Limit Reached ({len(self.gemini_usage_window)}/{self.gemini_rpm_limit}). Fallback to Ollama.")
+                    use_gemini = False # Bắt buộc dùng Ollama
+            
+            
+            if not use_gemini:
+                # --- CHẠY OLLAMA (Local - Không lo limit) ---
+                print(f" Using Ollama (Sim: {top_similarity:.2f} | Gemini Avail: {not use_gemini})")
                 
                 response = ollama_client.chat(
                     model=self.ollama_chat_model,
@@ -218,17 +255,22 @@ CÂU TRẢ LỜI:"""
                 return response['message']['content']
             
             else:
-                # Lower confidence → Dùng Gemini (powerful, better reasoning)
-                print(f"Using Gemini (similarity: {top_similarity:.2f})")
+                # --- CHẠY GEMINI (Cloud - Có limit) ---
+                print(f"Using Gemini (Sim: {top_similarity:.2f})")
                 
-                time.sleep(0.5)  # Rate limiting
+                # Ghi nhận usage
+                self._record_gemini_usage()
+                
+                # Rate limiting sleep nhẹ để tránh burst quá nhanh (tùy chọn)
+                time.sleep(0.5) 
+                
                 response = self.gemini_gen_model.generate_content(prompt)
                 return response.text
         
         except Exception as e:
             print(f" Generate answer error: {e}")
-            # Fallback: trả output từ database
-            return contexts[0]['metadata']['output']
+            # Fallback cuối cùng nếu cả 2 lỗi
+            return contexts[0]['metadata']['output']    
     
     def _generate_fallback_answer(self, question: str, use_ollama: bool = False) -> str:
         """

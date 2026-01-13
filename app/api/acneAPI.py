@@ -14,26 +14,26 @@ router = APIRouter(
     tags=["Acne Detection"]
 )
 
-# ✅ Khởi tạo services với error handling tốt hơn
+# Khởi tạo services với error handling tốt hơn
 acne_service = None
 advice_generator = None
 
 print("🔧 Initializing Acne Detection Service...")
 try:
     acne_service = AcneDetectionService()
-    print("✅ Acne Detection Service initialized")
+    print("Acne Detection Service initialized")
 except Exception as e:
-    print(f"❌ Failed to initialize AcneDetectionService: {e}")
+    print(f" Failed to initialize AcneDetectionService: {e}")
     traceback.print_exc()
 
 print("🔧 Initializing Advice Generator...")
 try:
     advice_generator = AdviceGenerator()
-    print("✅ Advice Generator initialized")
+    print("Advice Generator initialized")
 except Exception as e:
-    print(f"❌ Failed to initialize AdviceGenerator: {e}")
+    print(f" Failed to initialize AdviceGenerator: {e}")
     traceback.print_exc()
-    # ⚠️ Nếu không có Gemini API key, vẫn tiếp tục nhưng không có advice
+    # Nếu không có Gemini API key, vẫn tiếp tục nhưng không có advice
 
 
 def read_image_file(file_bytes: bytes) -> np.ndarray:
@@ -51,7 +51,7 @@ async def detect_acne(image: UploadFile = File(...)):
     Phát hiện mụn từ 1 ảnh chính diện (Binary Detection)
     """
     try:
-        # ✅ Check service availability
+        # Check service availability
         if acne_service is None:
             return JSONResponse(
                 status_code=503,
@@ -62,20 +62,20 @@ async def detect_acne(image: UploadFile = File(...)):
             )
 
         print("\n" + "=" * 60)
-        print("📸 Received acne detection request (Binary Classification)")
+        print(" Received acne detection request (Binary Classification)")
 
-        # ✅ Đọc ảnh
-        print("📖 Reading image...")
+        # Đọc ảnh
+        print(" Reading image...")
         img = read_image_file(await image.read())
-        print(f"✅ Image loaded: {img.shape}")
+        print(f"Image loaded: {img.shape}")
 
-        # ✅ Process ảnh
-        print("🔍 Processing image with CNN model...")
+        # Process ảnh
+        print("Processing image with CNN model...")
         results = acne_service.process_image(img)
 
         # Kiểm tra nếu không detect được mặt
         if not results:
-            print("⚠️ No face detected in image")
+            print("No face detected in image")
             return JSONResponse(
                 status_code=400,
                 content={
@@ -84,8 +84,8 @@ async def detect_acne(image: UploadFile = File(...)):
                 }
             )
 
-        # ✅ Tạo summary
-        print("\n📊 Creating summary...")
+        # Tạo summary
+        print("\n Creating summary...")
         summary_data = acne_service.get_summary(results)
 
         acne_regions = summary_data['acne_regions']
@@ -93,42 +93,42 @@ async def detect_acne(image: UploadFile = File(...)):
         overall_severity = summary_data['overall_severity']
         severity_count = summary_data['severity_count']
 
-        print(f"✅ Detection complete!")
+        print(f"Detection complete!")
         print(f"   Total regions analyzed: {summary_data['total_regions']}")
         print(f"   Regions with acne: {acne_regions}")
         print(f"   Clear regions: {clear_regions}")
         print(f"   Overall severity: {overall_severity}")
         print(f"   Severity distribution: {severity_count}")
 
-        # ✅ In ra chi tiết từng vùng
-        print("\n📋 REGION DETAILS:")
+        # In ra chi tiết từng vùng
+        print("\n REGION DETAILS:")
         for region, data in results.items():
             has_acne = data['has_acne']
             confidence = data['confidence']
             severity = data['severity']
 
-            status = "🔴 CÓ MỤN" if has_acne else "🟢 SẠCH"
+            status = " CÓ MỤN" if has_acne else " SẠCH"
             print(f"   {status} {region}: {severity} (conf: {confidence:.3f})")
 
-        # ✅ Tạo lời khuyên (với fallback nếu advice_generator không có)
+        # Tạo lời khuyên (với fallback nếu advice_generator không có)
         advice = []
         overall_summary = {}
 
         if advice_generator is not None:
             try:
-                print("\n💡 Generating personalized advice...")
+                print("\n Generating personalized advice...")
                 advice = advice_generator.generate_advice(results)
-                print(f"✅ Generated {len(advice)} advice items")
+                print(f"Generated {len(advice)} advice items")
 
-                # ✅ Tạo overall summary
+                # Tạo overall summary
                 overall_summary = advice_generator.get_overall_summary(advice, summary_data)
-                print(f"\n📈 Overall Assessment:")
+                print(f"\n Overall Assessment:")
                 print(f"   Severity: {overall_summary['severity']}")
                 print(f"   Recommendation: {overall_summary['recommendation']}")
                 print(f"   Need doctor: {overall_summary['need_doctor']}")
 
             except Exception as e:
-                print(f"⚠️ Failed to generate advice: {e}")
+                print(f"Failed to generate advice: {e}")
                 traceback.print_exc()
                 # Fallback: basic advice
                 advice = [{
@@ -142,7 +142,7 @@ async def detect_acne(image: UploadFile = File(...)):
                     'affected_regions': acne_regions
                 }
         else:
-            print("⚠️ Advice Generator not available, using basic advice")
+            print("Advice Generator not available, using basic advice")
             advice = [{
                 'zone': 'Tổng quan',
                 'message': 'Advice Generator chưa được khởi tạo. Vui lòng kiểm tra GEMINI_API_KEY.'
@@ -156,7 +156,7 @@ async def detect_acne(image: UploadFile = File(...)):
 
         print("=" * 60 + "\n")
 
-        # ✅ Response
+        # Response
         return JSONResponse({
             "success": True,
             "data": {
@@ -175,7 +175,7 @@ async def detect_acne(image: UploadFile = File(...)):
         })
 
     except ValueError as e:
-        print(f"❌ ValueError: {str(e)}")
+        print(f" ValueError: {str(e)}")
         return JSONResponse(
             status_code=400,
             content={
@@ -186,7 +186,7 @@ async def detect_acne(image: UploadFile = File(...)):
 
     except Exception as e:
         print("\n" + "=" * 60)
-        print("❌ UNEXPECTED ERROR:")
+        print(" UNEXPECTED ERROR:")
         print(f"Error type: {type(e).__name__}")
         print(f"Error message: {str(e)}")
         print("\nFull traceback:")
