@@ -18,7 +18,7 @@ class EmailSettings(BaseSettings):
 
 email_settings = EmailSettings()
 
-# ✅ THÊM PHẦN NÀY - Tạo ConnectionConfig object
+# - Tạo ConnectionConfig object
 conf = ConnectionConfig(
     MAIL_USERNAME=email_settings.MAIL_USERNAME,
     MAIL_PASSWORD=email_settings.MAIL_PASSWORD,

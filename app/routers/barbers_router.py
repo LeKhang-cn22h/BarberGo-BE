@@ -25,7 +25,7 @@ async def create_barber(
 ):
     """Tạo barber mới"""
     print("=" * 60)
-    print("🔵 CREATE BARBER REQUEST")
+    print(" CREATE BARBER REQUEST")
     print(f"name: {name}")
     print(f"user_id: {user_id}")
     print(f"name type: {type(name)}")
@@ -73,6 +73,12 @@ def get_all_barbers(
 def get_top_barbers(request:Request,limit: int = Query(2, ge=1, le=10)):
     """Lấy danh sách barbers có rank cao nhất"""
     return barbers_service.get_top_barbers(limit=limit)
+
+@router.get("/stats")  
+@limiter.limit("60/minute")
+def get_stats(request: Request):
+    """Lấy thống kê tổng quan: tổng barber, tổng booking"""
+    return barbers_service.get_barber_stats()
 
 
 @router.get("/locations", response_model=List[str])

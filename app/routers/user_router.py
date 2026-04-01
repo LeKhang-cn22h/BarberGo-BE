@@ -7,10 +7,17 @@ from app.schemas.user_schema import (
     ForgotPasswordRequest,
     ResetPasswordRequest,
     CreateOwnerRequest,
-    GGLoginRequest
+    GGLoginRequest,
+    RefreshTokenRequest
+)
+from app.api.dependencies import (
+    require_admin, 
+    verify_self_or_admin, 
+    prevent_self_action,
+    require_system,
 )
 from app.services import user_service
-from app.dependencies.current_user import get_current_user
+from app.services import auth_service
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 limiter = Limiter(key_func=get_remote_address)
@@ -81,12 +88,14 @@ def reset_password(request:Request,data: ResetPasswordRequest):
     """
     return user_service.reset_password(data)
 
-
+@router.post("/auth/refresh")
+def refresh_token(data:RefreshTokenRequest):
+    return auth_service.refresh_access_token(data.refresh_token)
 # ==================== User CRUD ====================
 
 @router.get("/")
 @limiter.limit("120/minute")
-def list_users(request:Request):
+def list_users(request:Request, current_user=Depends(require_admin)):
     """Lấy danh sách tất cả users"""
     return user_service.get_all_users()
 
@@ -94,23 +103,24 @@ def list_users(request:Request):
 @router.get("/{user_id}")
 @limiter.limit("120/minute")
 
-def get_user(request:Request,user_id: str):
+def get_user(request:Request,user_id: str, current_user=Depends(verify_self_or_admin)):
     """Lấy thông tin user theo ID"""
     return user_service.get_user_by_id(user_id)
 
 
-@router.put("/{user_id}", dependencies=[Depends(get_current_user)])
+@router.put("/{user_id}")
 @limiter.limit("30/minute")
-def update_user(request:Request,user_id: str, data: UserUpdate):
+def update_user(request:Request,user_id: str, data: UserUpdate, current_user=Depends(verify_self_or_admin)):
     """Cập nhật thông tin user"""
     return user_service.update_user(user_id, data)
 
 
-@router.delete("/{user_id}", dependencies=[Depends(get_current_user)])
+@router.delete("/{user_id}",)
 @limiter.limit("10/minute")
 
-def delete_user(request:Request,user_id: str):
-    
+def delete_user(request:Request,user_id: str, current_user=Depends(require_system)):
+    # ngăn admin xóa chỉnh mình
+    prevent_self_action(user_id,current_user,action="xóa")
     """Xóa user"""
     return user_service.delete_user(user_id)
 

@@ -31,7 +31,7 @@ class KnowledgeBaseUploader:
             )
             return result['embedding']
         except Exception as e:
-            print(f"❌ Lỗi khi tạo embedding: {e}")
+            print(f" Lỗi khi tạo embedding: {e}")
             return None
     
     def load_jsonl(self):
@@ -121,39 +121,39 @@ Câu trả lời: {output_text}"""
                 time.sleep(0.1)
                 
             except Exception as e:
-                print(f"\n❌ Lỗi khi upload document {i+1}: {e}")
+                print(f"\n Lỗi khi upload document {i+1}: {e}")
                 fail_count += 1
                 continue
         
-        print(f"\n✅ Hoàn thành!")
+        print(f"\n Hoàn thành!")
         print(f"   - Thành công: {success_count} documents")
         print(f"   - Thất bại: {fail_count} documents")
     
     def run(self):
         """Chạy toàn bộ quá trình upload"""
         print("=" * 60)
-        print("📚 KNOWLEDGE BASE UPLOADER")
+        print(" KNOWLEDGE BASE UPLOADER")
         print("=" * 60)
         
         # 1. Load JSONL file
-        print(f"\n📖 Đọc file: {self.jsonl_file_path}")
+        print(f"\n Đọc file: {self.jsonl_file_path}")
         raw_documents = self.load_jsonl()
-        print(f"   ✓ Đọc được {len(raw_documents)} documents")
+        print(f"    Đọc được {len(raw_documents)} documents")
         
         if len(raw_documents) == 0:
-            print("❌ Không có document nào được load. Kiểm tra lại file JSONL!")
+            print(" Không có document nào được load. Kiểm tra lại file JSONL!")
             return
         
         # 2. Prepare documents
-        print(f"\n🔧 Chuẩn bị documents...")
+        print(f"\n Chuẩn bị documents...")
         prepared_docs = [self.prepare_document(doc) for doc in raw_documents]
-        print(f"   ✓ Đã chuẩn bị xong {len(prepared_docs)} documents")
+        print(f"    Đã chuẩn bị xong {len(prepared_docs)} documents")
         
         # 3. Upload to Supabase
         self.upload_to_supabase(prepared_docs)
         
         print("\n" + "=" * 60)
-        print("🎉 Hoàn tất quá trình upload!")
+        print(" Hoàn tất quá trình upload!")
         print("=" * 60)
 
 

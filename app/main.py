@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from app.api.acneAPI import router as acne_router
+from app.routers.acneAPI import router as acne_router
 from app.routers.user_router import router as user_router
 from app.routers.barbers_router import router as barbers_router
 from app.routers.service_router import router as service_router

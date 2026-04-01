@@ -10,16 +10,16 @@ def migrate_all_documents():
     - embedding: vector mới từ content mới
     """
     print("=" * 60)
-    print("🔄 MIGRATE DOCUMENTS")
+    print(" MIGRATE DOCUMENTS")
     print("=" * 60)
     
     # 1. Lấy tất cả documents hiện tại
-    print("\n📥 Đang lấy tất cả documents...")
+    print("\nĐang lấy tất cả documents...")
     all_docs = rag_service.get_all_documents(limit=1000)
-    print(f"✅ Tìm thấy {len(all_docs)} documents")
+    print(f" Tìm thấy {len(all_docs)} documents")
     
     if not all_docs:
-        print("❌ Không có document nào để migrate!")
+        print(" Không có document nào để migrate!")
         return
     
     # 2. Process từng document
@@ -40,7 +40,7 @@ def migrate_all_documents():
                 try:
                     old_metadata = json.loads(old_metadata)
                 except json.JSONDecodeError:
-                    print(f"  ⚠️ Cannot parse metadata, using empty dict")
+                    print(f"   Cannot parse metadata, using empty dict")
                     old_metadata = {}
             
             # Extract input và output từ old metadata hoặc content
@@ -71,9 +71,9 @@ def migrate_all_documents():
                 "type": doc_type
             }
             
-            print(f"  ✏️ New content: {new_content[:60]}...")
-            print(f"  ✏️ Output: {output[:60]}...")
-            print(f"  ✏️ Type: {doc_type}")
+            print(f"   New content: {new_content[:60]}...")
+            print(f"   Output: {output[:60]}...")
+            print(f"   Type: {doc_type}")
             
             # Update document (sẽ tự động tạo embedding mới)
             success = rag_service.update_document(
@@ -84,25 +84,25 @@ def migrate_all_documents():
             )
             
             if success:
-                print(f"  ✅ Updated successfully!")
+                print(f"   Updated successfully!")
                 success_count += 1
             else:
-                print(f"  ❌ Update failed!")
+                print(f"   Update failed!")
                 fail_count += 1
             
             # Rate limiting
             time.sleep(0.5)
             
         except Exception as e:
-            print(f"  ❌ Error: {e}")
+            print(f"   Error: {e}")
             fail_count += 1
     
     # Summary
     print("\n" + "=" * 60)
-    print("📊 MIGRATION SUMMARY")
-    print(f"✅ Success: {success_count}")
-    print(f"❌ Failed: {fail_count}")
-    print(f"📝 Total: {len(all_docs)}")
+    print(" MIGRATION SUMMARY")
+    print(f" Success: {success_count}")
+    print(f" Failed: {fail_count}")
+    print(f" Total: {len(all_docs)}")
     print("=" * 60)
 
 
@@ -152,7 +152,7 @@ def preview_migration():
     Preview những thay đổi mà không thực sự update DB
     """
     print("=" * 60)
-    print("👀 PREVIEW MIGRATION (Không update DB)")
+    print(" PREVIEW MIGRATION (Không update DB)")
     print("=" * 60)
     
     all_docs = rag_service.get_all_documents(limit=10)
@@ -197,8 +197,8 @@ if __name__ == "__main__":
         preview_migration()
     else:
         # Real migration
-        confirm = input("⚠️ Bạn có chắc muốn migrate TẤT CẢ documents? (yes/no): ")
+        confirm = input(" Bạn có chắc muốn migrate TẤT CẢ documents? (yes/no): ")
         if confirm.lower() == 'yes':
             migrate_all_documents()
         else:
-            print("❌ Migration cancelled")
+            print(" Migration cancelled")

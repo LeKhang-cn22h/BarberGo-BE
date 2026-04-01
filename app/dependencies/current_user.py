@@ -1,6 +1,6 @@
 from fastapi import Depends, HTTPException, Header, status
 from app.database.supabase_client import supabase
-from supabase_auth.errors import AuthApiError
+from gotrue.errors import AuthApiError
 
 def get_current_user(authorization: str = Header(...)):
     """Validate access token và return user"""

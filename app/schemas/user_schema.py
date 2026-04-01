@@ -50,3 +50,6 @@ class CreateOwnerRequest(BaseModel):
 
 class GGLoginRequest(BaseModel):
     id_token:str
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str

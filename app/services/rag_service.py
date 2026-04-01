@@ -1,7 +1,8 @@
 """
 Hybrid RAG Service: Ollama + Gemini
-- similarity >= 0.75: Dùng Ollama (local, fast)
-- similarity < 0.75: Dùng Gemini (cloud, powerful)
+- Xử lý lỗi Gemini quota properly
+- Thêm method _record_gemini_usage()
+- Fallback sang Ollama khi Gemini fail
 """
 
 import google.generativeai as genai
@@ -13,7 +14,7 @@ import json
 import time
 from collections import deque
 
-# Import Ollama Client (requests-based)
+# Import Ollama Client
 from app.services.ollama_client import ollama_client
 
 load_dotenv()
@@ -27,7 +28,7 @@ class HybridRAGService:
         self.ollama_chat_model = os.getenv("OLLAMA_CHAT_MODEL", "qwen2.5:7b")
         self.ollama_embed_model = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
         
-        # Gemini config
+        # Gemini config 
         genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
         self.gemini_gen_model = genai.GenerativeModel("models/gemini-2.0-flash-exp")
         
@@ -37,65 +38,50 @@ class HybridRAGService:
             os.getenv("SUPABASE_KEY")
         )
         
-        # Threshold để quyết định dùng model nào
+        # Threshold
         self.similarity_threshold = 0.75
-
-        # Google cho free tier khoảng 15 request/phút (RPM)
         self.gemini_rpm_limit = 5
-
         self.gemini_usage_window = deque()
-        print(f"   Gemini Limit: {self.gemini_rpm_limit} RPM (Requests Per Minute)")
         
         print(" Hybrid RAG Service initialized")
         print(f"   Ollama: {self.ollama_chat_model} + {self.ollama_embed_model}")
         print(f"   Gemini: gemini-2.0-flash-exp")
         print(f"   Threshold: {self.similarity_threshold}")
     
+    # ==================== GEMINI RATE LIMITING ====================
+    
     def _check_gemini_availability(self) -> bool:
-        """
-        Kiểm tra xem có được phép gọi Gemini không.
-        Thuật toán: Sliding Window Log.
-        """
+        """Kiểm tra xem có được phép gọi Gemini không"""
         now = time.time()
         
-        # 1. Loại bỏ các request đã quá 60 giây khỏi hàng đợi
-        while self.gemini_usage_window and now - self.gemini_usage_window[0] > 60:
+        # Loại bỏ request cũ hơn 1 giờ
+        while self.gemini_usage_window and now - self.gemini_usage_window[0] > 3600:
             self.gemini_usage_window.popleft()
-            
-        # 2. Kiểm tra số lượng request còn lại trong cửa sổ 1 phút
-        if len(self.gemini_usage_window) < self.gemini_rpm_limit:
-            return True # Còn lượt
         
-        return False # Hết lượt
+        return len(self.gemini_usage_window) < self.gemini_rpm_limit
+    
+    def _record_gemini_usage(self):
+        """ Ghi nhận usage khi gọi Gemini"""
+        self.gemini_usage_window.append(time.time())
+    
     # ==================== EMBEDDING ====================
     
     def generate_embedding(self, text: str, use_ollama: bool = True) -> List[float]:
-        """
-        Generate embedding
-        
-        Args:
-            text: Text to embed
-            use_ollama: True = Ollama, False = Gemini
-        """
+        """Generate embedding"""
         try:
             if use_ollama:
-                print("đang chạy ollama")
-                # Ollama embedding (local, fast)
                 result = ollama_client.embeddings(
                     model=self.ollama_embed_model,
                     prompt=text
                 )
                 return result['embedding']
             else:
-                # Gemini embedding (cloud)
-                print("đang chạy gemini")
                 result = genai.embed_content(
-                    model=self.gemini_embed_model,
+                    model="models/text-embedding-004",
                     content=text,
                     task_type="retrieval_document"
                 )
                 return result['embedding']
-        
         except Exception as e:
             print(f" Embedding error: {e}")
             raise
@@ -106,14 +92,12 @@ class HybridRAGService:
         self,
         query: str,
         top_k: int = 3,
-        similarity_threshold: float = 0.5
+        similarity_threshold: float = 0.75
     ) -> List[Dict]:
         """Tìm kiếm documents tương tự"""
         try:
-            # Generate embedding (dùng Ollama mặc định)
             query_embedding = self.generate_embedding(query, use_ollama=True)
             
-            # Search in Supabase
             result = self.supabase.rpc(
                 "match_documents",
                 {
@@ -122,13 +106,11 @@ class HybridRAGService:
                 }
             ).execute()
             
-            # Parse và filter
             filtered_docs = []
             for doc in result.data:
                 if doc.get('similarity', 0) < similarity_threshold:
                     continue
                 
-                # Parse metadata
                 metadata = doc.get('metadata', {})
                 if isinstance(metadata, str):
                     try:
@@ -186,21 +168,15 @@ class HybridRAGService:
         question: str,
         contexts: List[Dict]
     ) -> str:
-        """
-        Generate answer với hybrid strategy
         
-        Strategy:
-        - similarity >= 0.75: Dùng Ollama (local, fast, confident)
-        - similarity < 0.75: Dùng Gemini (cloud, powerful, better reasoning)
-        """
         
         if not contexts or len(contexts) == 0:
-            return self._generate_fallback_answer(question, use_ollama=False)
+            # Không có context → Dùng Ollama fallback
+            return self._generate_fallback_answer(question, use_ollama=True)
         
-        # Lấy similarity cao nhất
         top_similarity = contexts[0].get('similarity', 0)
         
-        # Build context text
+        # Build context
         context_text = "\n\n".join([
             f"Thông tin {i + 1}:\n{doc['metadata']['output']}"
             for i, doc in enumerate(contexts[:2])
@@ -225,24 +201,19 @@ HƯỚNG DẪN:
 
 CÂU TRẢ LỜI:"""
         
+        use_gemini = False
+        
+        # Strategy: Similarity < threshold → muốn dùng Gemini
+        if top_similarity < self.similarity_threshold:
+            if self._check_gemini_availability():
+                use_gemini = True
+            else:
+                print(f"⚠️ Gemini Rate Limit. Fallback to Ollama.")
+        
         try:
-            use_gemini=False
-
-            #  STRATEGY: Similarity >= 0.75 → Ollama, < 0.75 → Gemini
-            
-            # Logic ban đầu: Similarity thấp thì muốn dùng Gemini
-            if top_similarity < self.similarity_threshold:
-                # KIỂM TRA LIMIT TRƯỚC KHI GỌI
-                if self._check_gemini_availability():
-                    use_gemini = True
-                else:
-                    print(f" Gemini Rate Limit Reached ({len(self.gemini_usage_window)}/{self.gemini_rpm_limit}). Fallback to Ollama.")
-                    use_gemini = False # Bắt buộc dùng Ollama
-            
-            
             if not use_gemini:
-                # --- CHẠY OLLAMA (Local - Không lo limit) ---
-                print(f" Using Ollama (Sim: {top_similarity:.2f} | Gemini Avail: {not use_gemini})")
+                # OLLAMA
+                print(f"🟢 Using Ollama (Sim: {top_similarity:.2f})")
                 
                 response = ollama_client.chat(
                     model=self.ollama_chat_model,
@@ -255,30 +226,33 @@ CÂU TRẢ LỜI:"""
                 return response['message']['content']
             
             else:
-                # --- CHẠY GEMINI (Cloud - Có limit) ---
-                print(f"Using Gemini (Sim: {top_similarity:.2f})")
+                # GEMINI
+                print(f" Using Gemini (Sim: {top_similarity:.2f})")
                 
-                # Ghi nhận usage
                 self._record_gemini_usage()
-                
-                # Rate limiting sleep nhẹ để tránh burst quá nhanh (tùy chọn)
-                time.sleep(0.5) 
+                time.sleep(0.5)
                 
                 response = self.gemini_gen_model.generate_content(prompt)
                 return response.text
         
         except Exception as e:
             print(f" Generate answer error: {e}")
-            # Fallback cuối cùng nếu cả 2 lỗi
-            return contexts[0]['metadata']['output']    
+            
+            # 🔧 FIX: Nếu lỗi → Thử Ollama
+            try:
+                print(" Retrying with Ollama...")
+                response = ollama_client.chat(
+                    model=self.ollama_chat_model,
+                    messages=[{'role': 'user', 'content': prompt}],
+                    options={'temperature': 0.7, 'num_predict': 500}
+                )
+                return response['message']['content']
+            except:
+                # Cuối cùng: Trả về output từ context
+                return contexts[0]['metadata']['output']
     
-    def _generate_fallback_answer(self, question: str, use_ollama: bool = False) -> str:
-        """
-        Generate fallback answer khi không có context
-        
-        Args:
-            use_ollama: True = Ollama, False = Gemini (default)
-        """
+    def _generate_fallback_answer(self, question: str, use_ollama: bool = True) -> str:
+     
         question_type = self.classify_question(question)
         
         prompts = {
@@ -303,6 +277,7 @@ Lịch sự từ chối, nhắc chỉ hỗ trợ về làm đẹp. 2 câu."""
         
         try:
             if use_ollama:
+                # OLLAMA (ưu tiên vì ổn định)
                 response = ollama_client.chat(
                     model=self.ollama_chat_model,
                     messages=[{'role': 'user', 'content': prompt}],
@@ -310,14 +285,19 @@ Lịch sự từ chối, nhắc chỉ hỗ trợ về làm đẹp. 2 câu."""
                 )
                 return response['message']['content']
             else:
-                time.sleep(0.5)
-                response = self.gemini_gen_model.generate_content(prompt)
-                return response.text
+                # GEMINI (nếu có quota)
+                if self._check_gemini_availability():
+                    self._record_gemini_usage()
+                    time.sleep(0.5)
+                    response = self.gemini_gen_model.generate_content(prompt)
+                    return response.text
+                else:
+                    # Hết quota → Fallback Ollama
+                    return self._generate_fallback_answer(question, use_ollama=True)
         
         except Exception as e:
             print(f" Fallback error: {e}")
             
-            # Hard fallback
             fallback_responses = {
                 'greeting': "Chào bạn! Mình là trợ lý ảo của BarberGo. Mình có thể giúp bạn đặt lịch cắt tóc, tìm salon, hoặc giải đáp thắc mắc về dịch vụ. Bạn cần hỗ trợ gì không?",
                 'beauty_related': "Mình nghĩ bạn nên tham khảo ý kiến stylist chuyên nghiệp. Bạn có thể đặt lịch tư vấn miễn phí trên BarberGo để được hỗ trợ tốt nhất nhé!",
@@ -336,9 +316,9 @@ Lịch sự từ chối, nhắc chỉ hỗ trợ về làm đẹp. 2 câu."""
         top_k: int = 3,
         return_sources: bool = False
     ) -> Dict:
-        """Main query function"""
+       
         
-        # 1. Tạo session nếu chưa có
+        # 1. Tạo session
         if not session_id:
             session_id = self.create_chat_session(
                 user_id=user_id,
@@ -352,37 +332,63 @@ Lịch sự từ chối, nhắc chỉ hỗ trợ về làm đẹp. 2 câu."""
             content=question
         )
         
-        # 3. RAG retrieve
-        relevant_docs = self.search_similar_documents(question, top_k)
-        
-        # 4. Generate answer (hybrid strategy)
-        answer = self.generate_answer(question, relevant_docs)
-        
-        # 5. Calculate confidence
-        if relevant_docs:
-            similarity = relevant_docs[0]["similarity"]
-            confidence = (
-                "high" if similarity > 0.7 else
-                "medium" if similarity > 0.45 else
-                "low"
+        try:
+            # 3. RAG retrieve
+            relevant_docs = self.search_similar_documents(question, top_k)
+            
+            if relevant_docs:
+                print(f"Top document similarity: {relevant_docs[0]['similarity']:.3f}")
+                print(f" Document content preview: {relevant_docs[0]['content'][:100]}")
+            else:
+                print(" No relevant documents found")
+            
+            # 4. Generate answer
+            answer = self.generate_answer(question, relevant_docs)
+            
+            # 5. Calculate confidence
+            if relevant_docs:
+                similarity = relevant_docs[0]["similarity"]
+                confidence = (
+                    "high" if similarity > 0.7 else
+                    "medium" if similarity > 0.45 else
+                    "low"
+                )
+            else:
+                confidence = "low"
+            
+            # 6. Lưu assistant message
+            self.save_chat_message(
+                session_id=session_id,
+                role="assistant",
+                content=answer,
+                confidence=confidence
             )
-        else:
-            confidence = "low"
+            
+            return {
+                "session_id": session_id,
+                "answer": answer,
+                "confidence": confidence,
+                "sources": relevant_docs if return_sources else None
+            }
         
-        # 6. Lưu assistant message
-        self.save_chat_message(
-            session_id=session_id,
-            role="assistant",
-            content=answer,
-            confidence=confidence
-        )
-        
-        return {
-            "session_id": session_id,
-            "answer": answer,
-            "confidence": confidence,
-            "sources": relevant_docs if return_sources else None
-        }
+        except Exception as e:
+            print(f" Query error: {e}")
+            
+            # Lưu error message
+            error_message = "Xin lỗi, hệ thống đang gặp sự cố. Vui lòng thử lại sau."
+            self.save_chat_message(
+                session_id=session_id,
+                role="assistant",
+                content=error_message,
+                confidence="low"
+            )
+            
+            return {
+                "session_id": session_id,
+                "answer": error_message,
+                "confidence": "low",
+                "sources": None
+            }
     
     # ==================== SESSION MANAGEMENT ====================
     

@@ -1,8 +1,9 @@
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Request
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Request, Depends
 from app.services.email_service import email_service
 from app.schemas.email_schema import EmailRequest, OwnerCredentialsEmailRequest
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from app.api.dependencies import require_system
 limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(prefix="/api/email", tags=["Email"])
@@ -13,7 +14,8 @@ router = APIRouter(prefix="/api/email", tags=["Email"])
 async def send_simple_email(
     request:Request,
     email_data: EmailRequest,
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    current_user:dict=Depends(require_system)
 ):
     """Gửi email đơn giản"""
     background_tasks.add_task(
@@ -29,7 +31,8 @@ async def send_simple_email(
 async def send_owner_credentials(
     request:Request,
     credentials_data: OwnerCredentialsEmailRequest,
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    current_user:dict=Depends(require_system)
 ):
     """Gửi email thông tin đăng nhập Owner"""
     

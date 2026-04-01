@@ -18,7 +18,7 @@ router = APIRouter(
 acne_service = None
 advice_generator = None
 
-print("🔧 Initializing Acne Detection Service...")
+print(" Initializing Acne Detection Service...")
 try:
     acne_service = AcneDetectionService()
     print("Acne Detection Service initialized")
@@ -26,7 +26,7 @@ except Exception as e:
     print(f" Failed to initialize AcneDetectionService: {e}")
     traceback.print_exc()
 
-print("🔧 Initializing Advice Generator...")
+print(" Initializing Advice Generator...")
 try:
     advice_generator = AdviceGenerator()
     print("Advice Generator initialized")

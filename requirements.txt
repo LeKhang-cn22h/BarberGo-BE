@@ -1,78 +1,51 @@
 fastapi==0.111.1
 uvicorn[standard]==0.23.2
+
+# Core
 numpy>=1.26.0,<2.0
+pydantic==2.5.0
+python-dotenv==1.0.0
+requests
+tqdm==4.66.1
+
+# AI / CV
 opencv-python-headless==4.8.1.78
 ultralytics==8.1.0
 mediapipe==0.10.21
-geopy
-tqdm
-supabase
-python-dotenv
-pydantic
-requests
-python-multipart==0.0.9
 insightface==0.7.3
 onnxruntime==1.16.3
+onnxruntime-gpu==1.16.3
 pillow==10.1.0
-accelerate==0.25.0
-diffusers==0.29.0
-transformers==4.36.2
-supervision
--f https://download.pytorch.org/whl/cu118
+
+# Deep Learning
 torch
 torchvision
 torchaudio
+-f https://download.pytorch.org/whl/cu118
 
-git+https://github.com/facebookresearch/segment-anything.git
-safetensors==0.4.1
-
-# ControlNet và FaceID
-
-
-onnxruntime-gpu==1.16.3
-
-# Image Processing
-scikit-image==0.22.0
-imageio==2.33.0
-
-# Utilities
-pydantic==2.5.0
-python-dotenv==1.0.0
-tqdm==4.66.1
-
-# Optional - Speed up
-xformers==0.0.23  # Memory efficient attention
-python-multipart==0.0.9
-insightface==0.7.3
-onnxruntime==1.16.3
-pillow==10.1.0
-accelerate==0.25.0
+# Diffusion / LLM
 diffusers==0.29.0
 transformers==4.36.2
+accelerate==0.25.0
+safetensors==0.4.1
+xformers==0.0.23
 google-generativeai
 
-
-safetensors==0.4.1
-
-# ControlNet và FaceID
-
-
-onnxruntime-gpu==1.16.3
-
-# Image Processing
+# Image processing
 scikit-image==0.22.0
 imageio==2.33.0
 
-# Utilities
-pydantic==2.5.0
-python-dotenv==1.0.0
-tqdm==4.66.1
-
-# Optional - Speed up
-xformers==0.0.23  # Memory efficient attention
-fastapi-mail --break-system-packages
-ollama
-ollama pull qwen2.5:7b
-ollama pull nomic-embed-text
-requests
+# Backend
+supabase
+python-multipart==0.0.9
+python-jose[cryptography]
+passlib[bcrypt]
 slowapi
+fastapi-mail
+
+# Others
+geopy
+supervision
+
+# Git
+git+https://github.com/facebookresearch/segment-anything.git

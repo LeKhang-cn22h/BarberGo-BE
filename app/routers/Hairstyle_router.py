@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, Query,Request
+from fastapi import APIRouter, UploadFile, File, HTTPException, Query,Request, Depends
 from fastapi.responses import StreamingResponse
 import cv2
 import numpy as np
@@ -6,6 +6,8 @@ import io
 import logging
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from app.dependencies.current_user import get_current_user
+
 limiter = Limiter(key_func=get_remote_address)
 router = APIRouter(
     prefix="/api/v1/hairstyle",
@@ -15,7 +17,7 @@ router = APIRouter(
 logger = logging.getLogger(__name__)
 
 
-@router.post("/generate")
+@router.post("/generate" )
 @limiter.limit("10/minute")
 
 async def generate_hairstyle(
@@ -25,6 +27,7 @@ async def generate_hairstyle(
     seed: int | None = Query(None),
     steps: int = Query(30, ge=10, le=50),
     denoising_strength: float = Query(0.35, ge=0.1, le=0.8),
+
 ):
     """
     Gửi 1 ảnh → trả về 1 ảnh đã đổi kiểu tóc
@@ -73,4 +76,31 @@ async def generate_hairstyle(
 
     except Exception as e:
         logger.error(f"Generate error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@router.get("/styles")
+async def get_available_styles():
+    """Get list of all available hair styles"""
+    try:
+        # Import config
+        from app.config.hair_config import HairStylePrompts
+
+        styles = []
+        for style_id in HairStylePrompts.get_style_list():
+            style_info = HairStylePrompts.get_style_info(style_id)
+            styles.append({
+                "id": style_info["id"],
+                "name": style_info["name"],
+                "description": style_info["prompt"][:100] + "...",
+                "gender": style_info.get("gender", "unisex"),
+                "category": style_info.get("category", "general"),
+            })
+
+        return {
+            "total": len(styles),
+            "styles": styles
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting styles: {e}")
         raise HTTPException(status_code=500, detail=str(e))

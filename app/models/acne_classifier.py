@@ -1,4 +1,3 @@
-# models/acne_classifier.py
 import torch
 import torch.nn as nn
 from torchvision import models, transforms
@@ -25,7 +24,7 @@ def check_acne_redness(img):
     # Convert to HSV
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
 
-    # ✅ CHỈ DETECT MÀU ĐỎ VIÊM (không phải màu da)
+    #  CHỈ DETECT MÀU ĐỎ VIÊM (không phải màu da)
     # Mụn viêm: Hue 0-20 (đỏ tươi), Saturation cao, Value cao
     lower_acne_red = np.array([0, 100, 100])  # S và V cao hơn
     upper_acne_red = np.array([20, 255, 255])
@@ -34,7 +33,7 @@ def check_acne_redness(img):
     # Calculate percentage
     red_percentage = np.sum(mask > 0) / mask.size
 
-    # ✅ CHỈ TÍNH KHI CÓ VÙNG ĐỎ TẬP TRUNG (không phải rải rác)
+    #  CHỈ TÍNH KHI CÓ VÙNG ĐỎ TẬP TRUNG (không phải rải rác)
     # Find contours để xem có vùng đỏ tập trung không
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
@@ -104,7 +103,7 @@ class AcneClassifier:
 
         print(f"🔧 Loading model from: {model_path}")
         print(f"   Device: {self.device}")
-        print(f"   Strict mode: {'ENABLED ✅' if strict_mode else 'DISABLED'}")
+        print(f"   Strict mode: {'ENABLED ' if strict_mode else 'DISABLED'}")
 
         self.model = models.mobilenet_v2(pretrained=False)
 
@@ -119,7 +118,7 @@ class AcneClassifier:
 
         state_dict = torch.load(model_path, map_location=self.device)
         self.model.load_state_dict(state_dict)
-        print("✅ Model loaded successfully!")
+        print(" Model loaded successfully!")
 
         self.model.to(self.device)
         self.model.eval()
@@ -149,8 +148,8 @@ class AcneClassifier:
             output = self.model(input_tensor)
             cnn_probability = torch.sigmoid(output).item()
 
-        # ✅ CNN THRESHOLD GẮT GẠO
-        cnn_has_acne = cnn_probability < 0.3
+        #  CNN THRESHOLD GẮT GẠO
+        cnn_has_acne = cnn_probability <0.3
         cnn_confidence = abs(cnn_probability - 0.5) * 2
 
         if not self.strict_mode:
@@ -160,15 +159,15 @@ class AcneClassifier:
             }
 
         # 2. Additional Checks
-        redness_score = check_acne_redness(image)  # ← Sửa đổi
+        redness_score = check_acne_redness(image)  
         texture_score = check_texture_variance(image)
-        spot_score = check_spot_presence(image)  # ← Thêm mới
+        spot_score = check_spot_presence(image)  
 
-        # 3. ✅ ENSEMBLE DECISION - TIN CNN NHIỀU HƠN
+        # 3.  ENSEMBLE DECISION - TIN CNN NHIỀU HƠN
         # Chiến lược: CNN là tiêu chí BẮT BUỘC
 
         if not cnn_has_acne:
-            # ✅ NẾU CNN NÓI KHÔNG → TIN CNN LUÔN
+            #  NẾU CNN NÓI KHÔNG → TIN CNN LUÔN
             final_has_acne = False
             final_confidence = 1.0 - cnn_confidence
 
@@ -184,23 +183,22 @@ class AcneClassifier:
 
             return final_has_acne, final_confidence, details
 
-        # ✅ NẾU CNN NÓI CÓ → KIỂM TRA THÊM
+        #  NẾU CNN NÓI CÓ → KIỂM TRA THÊM
         additional_criteria = 0
         total_additional = 3
 
         # Criterion 1: Has acne-like redness (THRESHOLD CAO HƠN)
-        if redness_score > 0.10:  # Tăng từ 0.05 lên 0.15
+        if redness_score > 0.10:  
             additional_criteria += 1
 
         # Criterion 2: Has texture variation
-        if texture_score > 0.3:  # Tăng từ 0.3 lên 0.5
+        if texture_score > 0.3:  
             additional_criteria += 1
 
         # Criterion 3: Has visible spots
         if spot_score > 0.4:
             additional_criteria += 1
 
-        # ✅ CẦN ÍT NHẤT 2/3 TIÊU CHÍ PHỤ (ngoài CNN)
         final_has_acne = additional_criteria >= 1
         final_confidence = (additional_criteria / total_additional) * cnn_confidence
 

@@ -9,12 +9,6 @@ class TimeSlotCreate(BaseModel):
     start_time: time
     end_time: time
     is_available: Optional[bool] = True
-    
-    @field_validator('end_time')
-    def validate_time_range(cls, v, info):
-        if 'start_time' in info.data and v <= info.data['start_time']:
-            raise ValueError('end_time phải lớn hơn start_time')
-        return v
 
 # Tạo nhiều time slots cùng lúc
 class TimeSlotBulkCreate(BaseModel):

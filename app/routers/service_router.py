@@ -1,21 +1,22 @@
 from fastapi import APIRouter, Depends, Request
 from app.schemas.service_schema import ServiceCreate, ServiceUpdate
 from app.services import service_service
-from app.dependencies.current_user import get_current_user
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 limiter = Limiter(key_func=get_remote_address)
 router = APIRouter(prefix="/services", tags=["Services"])
-
+from app.api.dependencies import (
+    require_admin, 
+    require_owner
+)
 # ==================== Create ====================
 
-@router.post("/", dependencies=[Depends(get_current_user)])
+@router.post("/")
 @limiter.limit("10/minute")
 
-def create_service(request:Request,data: ServiceCreate):
+def create_service(request:Request,data: ServiceCreate, current_user:dict=Depends(require_owner)):
     """
     Tạo dịch vụ mới
-    - Yêu cầu đăng nhập
     """
     return service_service.create_service(data)
 
@@ -27,7 +28,6 @@ def create_service(request:Request,data: ServiceCreate):
 def get_all_services(request:Request):
     """
     Lấy danh sách tất cả dịch vụ
-    - Không cần đăng nhập
     """
     return service_service.get_all_services()
 
@@ -59,9 +59,9 @@ def get_price_range(request:Request,barber_id:str):
 
 # ==================== Update ====================
 
-@router.put("/{service_id}", dependencies=[Depends(get_current_user)])
+@router.put("/{service_id}")
 @limiter.limit("30/minute")
-def update_service(request:Request, service_id: int, data: ServiceUpdate):
+def update_service(request:Request, service_id: int, data: ServiceUpdate,current_user:dict=Depends(require_owner)):
     """
     Cập nhật thông tin dịch vụ
     - Yêu cầu đăng nhập
@@ -71,9 +71,9 @@ def update_service(request:Request, service_id: int, data: ServiceUpdate):
 
 # ==================== Delete ====================
 
-@router.patch("/{service_id}/delete", dependencies=[Depends(get_current_user)])
+@router.patch("/{service_id}/delete")
 @limiter.limit("30/minute")
-def delete_service(request:Request,service_id: int):
+def delete_service(request:Request,service_id: int,current_user:dict=Depends(require_owner)):
     """
     Xóa mềm dịch vụ (set status = false)
     - Không xóa hẳn khỏi database
@@ -82,9 +82,9 @@ def delete_service(request:Request,service_id: int):
     return service_service.delete_service(service_id)
 
 
-@router.patch("/{service_id}/restore", dependencies=[Depends(get_current_user)])
+@router.patch("/{service_id}/restore")
 @limiter.limit("30/minute")
-def restore_service(request:Request,service_id: int):
+def restore_service(request:Request,service_id: int, current_user:dict=Depends(require_owner)):
     """
     Khôi phục dịch vụ đã xóa (set status = true)
     - Yêu cầu đăng nhập
@@ -92,9 +92,9 @@ def restore_service(request:Request,service_id: int):
     return service_service.restore_service(service_id)
 
 
-@router.patch("/{service_id}/toggle-status", dependencies=[Depends(get_current_user)])
+@router.patch("/{service_id}/toggle-status")
 @limiter.limit("30/minute")
-def toggle_service_status(request:Request,service_id: int):
+def toggle_service_status(request:Request,service_id: int,current_user:dict=Depends(require_owner)):
     """
     Chuyển đổi trạng thái active/inactive của dịch vụ
     - Nếu đang active (true) -> inactive (false)

@@ -28,7 +28,7 @@ class AcneDetectionService:
                 'severity': 'none'
             }
 
-        # ✅ Classifier tự xử lý pore removal
+        #  Classifier tự xử lý pore removal
         has_acne, confidence = self.classifier.predict_with_confidence(region_img)
 
         # Phân loại severity
@@ -49,13 +49,13 @@ class AcneDetectionService:
 
     def process_image(self, img) -> Dict:
         """Xử lý ảnh chính diện"""
-        print("🔍 Detecting face regions...")
+        print(" Detecting face regions...")
 
         # Extract face regions
         all_regions = self.face_detector.extract_face_regions(img, FACE_REGIONS)
 
         if not all_regions:
-            print("   ⚠️  No face detected")
+            print("   No face detected")
             return {}
 
         print(f"   ✓ Found {len(all_regions)} regions")

@@ -16,6 +16,7 @@ from diffusers import (
     UniPCMultistepScheduler,
 )
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -28,7 +29,9 @@ class HairStyleConfig:
     NUM_INFERENCE_STEPS = 30
     GUIDANCE_SCALE = 7.5
     DENOISING_STRENGTH = 0.75
+    #tạo khu vực gen
     MASK_DILATE = 10
+    #tạo khu vực bảo vệ
     FACE_PROTECTION_PADDING = 0.25
 
 

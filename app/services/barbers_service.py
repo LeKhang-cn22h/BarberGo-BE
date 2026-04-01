@@ -54,6 +54,23 @@ def upload_barber_image(file: UploadFile, barber_id: str) -> str:
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error uploading image: {str(e)}")
 
+def get_barber_stats() -> dict:
+    """Lấy thống kê tổng quan"""
+    try:
+        # Đếm tổng barbers
+        barbers_res = supabase.table("barbers").select("id", count="exact").execute()
+        total_barbers = barbers_res.count or 0
+
+        # Đếm tổng bookings
+        bookings_res = supabase.table("bookings").select("id", count="exact").execute()
+        total_appointments = bookings_res.count or 0
+
+        return {
+            "total_barbers": total_barbers,
+            "total_appointments": total_appointments
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching stats: {str(e)}")
 
 def delete_barber_image(image_url: str) -> bool:
     """Xóa ảnh từ Supabase Storage"""
@@ -204,7 +221,7 @@ def update_barber(
                     delete_barber_image(new_image_url)
                 raise HTTPException(status_code=404, detail="Barber not found")
         
-        # ✅ XỬ LÝ LOCATION RIÊNG - Gọi function update_location
+        #  XỬ LÝ LOCATION RIÊNG - Gọi function update_location
         if data.location is not None:
             try:
                 supabase.rpc(

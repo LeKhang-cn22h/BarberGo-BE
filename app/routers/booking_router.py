@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from app.schemas.booking_schema import BookingCreate
 from app.services import booking_service
 from app.dependencies.current_user import get_current_user
+from app.api.dependencies import (require_admin,require_owner,verify_self_or_admin)
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 router = APIRouter(prefix="/bookings", tags=["Bookings"])
@@ -21,11 +22,10 @@ def create_booking(request:Request,data: BookingCreate):
 
 
 # ==================== Read ====================
-#  Thứ tự quan trọng: Routes CỤ THỂ phải đứng TRƯỚC routes CHUNG
 
-@router.get("/", dependencies=[Depends(get_current_user)])
+@router.get("/")
 @limiter.limit("120/minute")
-def get_all_bookings(request:Request):
+def get_all_bookings(request:Request, current_user:dict=Depends(require_admin)):
     """
     Lấy danh sách tất cả bookings với đầy đủ thông tin
     - Yêu cầu đăng nhập (admin)
@@ -35,7 +35,7 @@ def get_all_bookings(request:Request):
 
 @router.get("/status/{status}")
 @limiter.limit("120/minute")
-def get_bookings_by_status(request:Request,status: str):
+def get_bookings_by_status(request:Request,status: str, current_user:dict=Depends(require_admin)):
     """
     Lấy danh sách bookings theo status
     - status: confirmed, completed, cancelled
@@ -54,10 +54,10 @@ def get_user_bookings(request:Request,user_id: str):
     return booking_service.get_bookings_by_user(user_id)
 
 
-@router.get("/barber/{barber_id}", dependencies=[Depends(get_current_user)])
+@router.get("/barber/{barber_id}")
 @limiter.limit("120/minute")
 
-def get_barber_bookings(request:Request,barber_id: str):
+def get_barber_bookings(request:Request,barber_id: str, current_user:dict=Depends(require_admin)):
     """
     Lấy danh sách bookings của 1 barber
     - Yêu cầu đăng nhập
@@ -66,10 +66,10 @@ def get_barber_bookings(request:Request,barber_id: str):
 
 
 #  Route với path parameter động phải đặt CUỐI CÙNG
-@router.get("/{booking_id}", dependencies=[Depends(get_current_user)])
+@router.get("/{booking_id}")
 @limiter.limit("120/minute")
 
-def get_booking(request:Request,booking_id: int):
+def get_booking(request:Request,booking_id: int,current_user:dict=Depends(require_owner)):
     """
     Lấy thông tin chi tiết 1 booking
     - Bao gồm user, barber, time_slot, và danh sách services
@@ -103,3 +103,9 @@ def cancel_booking(request:Request,booking_id: int):
     - Yêu cầu đăng nhập
     """
     return booking_service.cancel_booking(booking_id)
+
+@router.patch("/{booking_id}/boom")
+@limiter.limit("30/minute")
+def boom_booking(request: Request, booking_id:int, current_user:dict=Depends(require_owner)):
+    # chỉ có owner mới được hủy, trường hợp khách hàng ko đến
+    return booking_service.boom_booking(booking_id)

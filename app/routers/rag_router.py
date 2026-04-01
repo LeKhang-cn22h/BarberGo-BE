@@ -1,5 +1,5 @@
 # Hybrid Chat Router
-from fastapi import APIRouter, HTTPException, Query, Path, Request
+from fastapi import APIRouter, HTTPException, Query, Path, Request, Depends
 from typing import List
 from datetime import datetime
 from slowapi import Limiter
@@ -16,6 +16,12 @@ from app.schemas.rag_schema import (
     CreateSessionRequest,
     UpdateSessionRequest,
 )
+from app.api.dependencies import (
+    require_admin, 
+    require_system
+)
+from app.dependencies.current_user import get_current_user
+
 limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(prefix="/api/chatbot", tags=["Hybrid RAG Chatbot"])
@@ -46,7 +52,7 @@ async def health_check():
 
 # ==================== CHAT ====================
 
-@router.post("/chat", response_model=ChatResponse)
+@router.post("/chat", response_model=ChatResponse, dependencies=[Depends(get_current_user)])
 @limiter.limit("10/minute")
 async def chat(request: Request ,body: ChatRequest):
     """
@@ -95,7 +101,7 @@ async def chat(request: Request ,body: ChatRequest):
 
 # ==================== SESSIONS ====================
 
-@router.post("/sessions", status_code=201)
+@router.post("/sessions", status_code=201,dependencies=[Depends(get_current_user)])
 @limiter.limit("30/minute")
 async def create_session(request : Request, body: CreateSessionRequest):
     """Tạo session chat mới"""
@@ -113,7 +119,7 @@ async def create_session(request : Request, body: CreateSessionRequest):
         raise HTTPException(500, detail=str(e))
 
 
-@router.get("/sessions/{user_id}", response_model=ChatSessionsResponse)
+@router.get("/sessions/{user_id}", response_model=ChatSessionsResponse,dependencies=[Depends(get_current_user)])
 @limiter.limit("120/minute")
 async def get_sessions(
     request:Request,
@@ -133,7 +139,7 @@ async def get_sessions(
         raise HTTPException(500, detail=str(e))
 
 
-@router.get("/sessions/{session_id}/messages", response_model=ChatHistoryResponse)
+@router.get("/sessions/{session_id}/messages", response_model=ChatHistoryResponse,dependencies=[Depends(get_current_user)])
 @limiter.limit("120/minute")
 async def get_history(request:Request, session_id: str = Path(...)):
     """Lấy lịch sử chat"""
@@ -149,7 +155,7 @@ async def get_history(request:Request, session_id: str = Path(...)):
         raise HTTPException(500, detail=str(e))
 
 
-@router.put("/sessions/{session_id}")
+@router.put("/sessions/{session_id}",dependencies=[Depends(get_current_user)])
 @limiter.limit("30/minute")
 async def update_title(
     request:Request,
@@ -174,7 +180,7 @@ async def update_title(
         raise HTTPException(500, detail=str(e))
 
 
-@router.delete("/sessions/{session_id}")
+@router.delete("/sessions/{session_id}",dependencies=[Depends(get_current_user)])
 @limiter.limit("30/minute")
 async def delete_session(request : Request,session_id: str = Path(...)):
     """Xóa session"""
@@ -198,7 +204,7 @@ async def delete_session(request : Request,session_id: str = Path(...)):
 
 @router.post("/documents", status_code=201)
 @limiter.limit("10/minute")
-async def create_document(request:Request, body: dict):
+async def create_document(request:Request, body: dict, current_user:dict=Depends(require_system)):
     """Tạo document mới"""
     try:
         if not body.get("content") or not body.get("output"):
@@ -228,7 +234,8 @@ async def create_document(request:Request, body: dict):
 async def get_documents(
     request:Request,
     limit: int = Query(100, ge=1, le=500),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
+    current_user:dict=Depends(require_system)
 ):
     """Lấy danh sách documents"""
     try:
@@ -252,7 +259,7 @@ async def get_documents(
 
 @router.get("/documents/{document_id}")
 @limiter.limit("120/minute")
-async def get_document(request:Request,document_id: int = Path(..., ge=1)):
+async def get_document(request:Request,document_id: int = Path(..., ge=1),current_user:dict=Depends(require_system)):
     """Lấy chi tiết document"""
     try:
         document = rag_service.get_document_by_id(document_id)
@@ -269,7 +276,7 @@ async def get_document(request:Request,document_id: int = Path(..., ge=1)):
 
 @router.get("/documents/search/{keyword}")
 @limiter.limit("120/minute")
-async def search_documents(request:Request, keyword: str = Path(..., min_length=1)):
+async def search_documents(request:Request, keyword: str = Path(..., min_length=1),current_user:dict=Depends(require_system)):
     """Tìm kiếm documents"""
     try:
         documents = rag_service.search_documents_by_keyword(keyword)
@@ -288,7 +295,8 @@ async def search_documents(request:Request, keyword: str = Path(..., min_length=
 async def update_document(
     request:Request,
     document_id: int = Path(..., ge=1),
-    body: dict = ...
+    body: dict = ...,
+    current_user:dict=Depends(require_system)
 ):
     """Cập nhật document"""
     try:
@@ -314,7 +322,7 @@ async def update_document(
 
 @router.delete("/documents/{document_id}")
 @limiter.limit("30/minute")
-async def delete_document(request:Request,document_id: int = Path(..., ge=1)):
+async def delete_document(request:Request,document_id: int = Path(..., ge=1),current_user:dict=Depends(require_system)):
     """Xóa document"""
     try:
         success = rag_service.delete_document(document_id)
