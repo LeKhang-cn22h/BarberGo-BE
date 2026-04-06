@@ -14,6 +14,7 @@ from app.routers.time_slot_router import router as time_slot_router
 from app.routers.rag_router import router as rag_router
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers.email_router import router as email_router
+from app.routers.barber_documents_router import router as barber_documents_router
 
 limiter = Limiter(key_func=get_remote_address)
 
@@ -52,6 +53,7 @@ app.include_router(rag_router)
 
 app.include_router(Hairstyle_router)
 app.include_router(email_router)
+app.include_router(barber_documents_router)
 
 
 @app.get("/")
